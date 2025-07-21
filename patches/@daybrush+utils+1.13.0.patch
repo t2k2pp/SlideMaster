@@ -1,0 +1,13 @@
+diff --git a/node_modules/@daybrush/utils/dist/utils.esm.js b/node_modules/@daybrush/utils/dist/utils.esm.js
+index 2c03cff..69de01c 100644
+--- a/node_modules/@daybrush/utils/dist/utils.esm.js
++++ b/node_modules/@daybrush/utils/dist/utils.esm.js
+@@ -820,7 +820,7 @@ const id = requestAnimationFrame((timestamp) => {
+ 
+ cancelAnimationFrame(id);
+ */
+-var cancelAnimationFrame = /*#__PURE__*/function () {
++var cancelAnimationFrame = function () {
+   var caf = IS_WINDOW && (window.cancelAnimationFrame || window.webkitCancelAnimationFrame || window.mozCancelAnimationFrame || window.msCancelAnimationFrame);
+   return caf ? caf.bind(window) : function (handle) {
+     clearTimeout(handle);
