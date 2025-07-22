@@ -44,8 +44,8 @@ const THEME_FONTS: Record<PresentationTheme, {
     bodyWeight: '300'
   },
   playful: {
-    titleFont: '"Nunito", "Comic Sans MS", cursive',
-    bodyFont: '"Nunito", sans-serif',
+    titleFont: 'Nunito, Comic Sans MS, cursive',
+    bodyFont: 'Nunito, sans-serif',
     titleWeight: 'bold',
     bodyWeight: 'normal'
   },
@@ -57,7 +57,7 @@ const THEME_FONTS: Record<PresentationTheme, {
   },
   children_bright: {
     titleFont: '"Fredoka One", "Comic Sans MS", cursive',
-    bodyFont: '"Nunito", sans-serif',
+    bodyFont: 'Nunito, sans-serif',
     titleWeight: 'normal',
     bodyWeight: 'normal'
   },

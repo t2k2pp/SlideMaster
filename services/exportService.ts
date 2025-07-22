@@ -110,16 +110,23 @@ export const exportPresentation = async (
         }
 
       case 'pdf':
-        const { exportAsPDF } = await import('./export/pdfExporter');
-        return exportAsPDF(presentation, onSlideChange, onProgress);
+        // Default to structured PDF (searchable text) unless explicitly disabled
+        if (options.structuredContent === false) {
+          const { exportAsPDF } = await import('./export/pdfExporter');
+          return exportAsPDF(presentation, onSlideChange, onProgress);
+        } else {
+          const { exportAsPDFStructured } = await import('./export/pdfExporter');
+          return exportAsPDFStructured(presentation, onSlideChange, onProgress);
+        }
 
       case 'pptx':
-        if (options.structuredContent) {
-          const { exportAsPPTXStructured } = await import('./export/pptxExporter');
-          return exportAsPPTXStructured(presentation, onSlideChange);
-        } else {
+        // Default to structured PPTX (editable objects) unless explicitly disabled
+        if (options.structuredContent === false) {
           const { exportAsPPTX } = await import('./export/pptxExporter');
           return exportAsPPTX(presentation, onSlideChange);
+        } else {
+          const { exportAsPPTXStructured } = await import('./export/pptxExporter');
+          return exportAsPPTXStructured(presentation, onSlideChange);
         }
 
       case 'html':
