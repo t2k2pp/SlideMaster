@@ -1,5 +1,5 @@
 import React from 'react';
-import { Presentation } from '../types';
+import { Presentation, PresentationPurpose } from '../types';
 import { 
   Save, 
   Download, 
@@ -11,7 +11,35 @@ import {
   Loader2,
   Hash,
   Key,
+  Target,
 } from 'lucide-react';
+
+// 用途の日本語表示マッピング
+const getPurposeDisplayName = (purpose: PresentationPurpose | undefined): string => {
+  if (!purpose || purpose === 'auto') return '自動選択';
+  
+  const purposeNames: Record<PresentationPurpose, string> = {
+    auto: '自動選択',
+    business_presentation: 'ビジネス',
+    educational_content: '教育・学習',
+    storytelling: '物語・ストーリー',
+    children_content: '子供向け',
+    tutorial_guide: 'チュートリアル',
+    portfolio_showcase: 'ポートフォリオ',
+    marketing_pitch: 'マーケティング',
+    academic_research: '学術・研究',
+    event_announcement: 'イベント告知',
+    training_material: '研修・訓練',
+    product_demo: '製品デモ',
+    report_summary: 'レポート',
+    creative_project: 'クリエイティブ',
+    game_content: 'ゲーム・ゲームブック',
+    digital_signage: 'デジタルサイネージ',
+    video_storyboard: '動画ストーリーボード',
+  };
+  
+  return purposeNames[purpose] || '不明';
+};
 
 interface HeaderProps {
   presentation: Presentation | null;
@@ -57,9 +85,20 @@ const Header: React.FC<HeaderProps> = ({
           </div>
           
           {presentation && (
-            <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
-              <span className="text-sm text-slate-600 dark:text-slate-400">Presentation:</span>
-              <span className="text-sm text-slate-900 dark:text-white font-medium">{presentation.title}</span>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                <span className="text-sm text-slate-600 dark:text-slate-400">Presentation:</span>
+                <span className="text-sm text-slate-900 dark:text-white font-medium">{presentation.title}</span>
+              </div>
+              
+              {presentation.purpose && (
+                <div className="flex items-center gap-1 px-2 py-1 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg">
+                  <Target size={14} className="text-blue-600 dark:text-blue-400" />
+                  <span className="text-xs text-blue-700 dark:text-blue-300 font-medium">
+                    {getPurposeDisplayName(presentation.purpose)}
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>

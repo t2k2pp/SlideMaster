@@ -360,7 +360,7 @@ export interface UserSettings {
   // AI Model Settings
   aiModels: {
     textGeneration: 'gemini-2.5-pro' | 'gemini-2.5-flash' | 'gemini-2.5-flash-lite' | 'gemini-2.0-flash' | 'gemini-2.0-flash-lite' | 'gemini-1.5-pro-latest' | 'gemini-1.5-flash-latest' | 'gemma-3-27b-it' | 'gemma-3-12b-it' | 'gemma-3-4b-it' | 'gemma-3n-e4b' | 'gemma-3n-e2b';
-    imageGeneration: 'imagen-4' | 'imagen-3';
+    imageGeneration: 'gemini-2.0-flash-exp' | 'gemini-2.0-flash' | 'imagen-4' | 'imagen-3';
     videoAnalysis: 'gemini-2.5-pro' | 'gemini-2.5-flash' | 'gemini-1.5-pro-latest' | 'gemini-1.5-flash-latest';
   };
   

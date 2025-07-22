@@ -554,33 +554,36 @@ export const generateSlidesFromVideo = async (
 
       // Add title layer
       const titleLayer: TextLayer = {
-        ...DEFAULT_LAYER_PROPS,
         id: `title-${index + 1}`,
         type: 'text',
-        x: 50,
-        y: 50,
-        width: CANVAS_SIZES[generationOptions.aspectRatio as keyof typeof CANVAS_SIZES].width - 100,
-        height: 80,
+        x: 10,
+        y: 15,
+        width: 80,
+        height: 20,
+        rotation: 0,
+        opacity: 1,
+        zIndex: 1,
         content: title,
-        fontSize: TEXT_STYLES.title.fontSize,
-        fontFamily: TEXT_STYLES.title.fontFamily,
-        fontWeight: TEXT_STYLES.title.fontWeight,
-        textStyleId: 'title',
+        fontSize: DEFAULT_LAYER_PROPS.text.fontSize,
+        fontFamily: 'Inter, sans-serif',
+        fontWeight: 'bold',
+        textStyleId: DEFAULT_LAYER_PROPS.text.textStyleId,
         textColor: THEME_CONFIGS[generationOptions.theme as keyof typeof THEME_CONFIGS]?.textColor || THEME_CONFIGS.professional.textColor,
-        textAlign: 'center',
-        zIndex: 1
+        textAlign: DEFAULT_LAYER_PROPS.text.textAlign
       };
       slide.layers.push(titleLayer);
 
       // Add content layer
       const contentLayer: TextLayer = {
-        ...DEFAULT_LAYER_PROPS,
         id: `content-${index + 1}`,
         type: 'text',
-        x: 50,
-        y: 150,
-        width: CANVAS_SIZES[generationOptions.aspectRatio as keyof typeof CANVAS_SIZES].width - 100,
-        height: CANVAS_SIZES[generationOptions.aspectRatio as keyof typeof CANVAS_SIZES].height - 200,
+        x: 10,
+        y: 40,
+        width: 80,
+        height: 50,
+        rotation: 0,
+        opacity: 1,
+        zIndex: 2,
         content: content,
         fontSize: TEXT_STYLES.body.fontSize,
         fontFamily: TEXT_STYLES.body.fontFamily,
@@ -607,17 +610,18 @@ export const generateSlidesFromVideo = async (
           
           if (frameData) {
             const imageLayer: ImageLayer = {
-              ...DEFAULT_LAYER_PROPS,
               id: `frame-${index + 1}`,
               type: 'image',
-              x: CANVAS_SIZES[generationOptions.aspectRatio as keyof typeof CANVAS_SIZES].width - 350,
-              y: 150,
-              width: 300,
-              height: 200,
+              x: 60,
+              y: 30,
+              width: 35,
+              height: 40,
+              rotation: 0,
+              opacity: 1,
+              zIndex: 3,
               src: frameData,
               prompt: `Frame from video at ${timestamp}`,
-              objectFit: 'cover',
-              zIndex: 3
+              objectFit: DEFAULT_LAYER_PROPS.image.objectFit
             };
             
             slide.layers.push(imageLayer);

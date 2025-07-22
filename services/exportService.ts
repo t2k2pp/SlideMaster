@@ -128,7 +128,7 @@ export const exportPresentation = async (
 
       case 'marp':
         const { exportAsMarp } = await import('./export/marpExporter');
-        return exportAsMarp(presentation);
+        return exportAsMarp(presentation, true); // includeImages: true for ZIP format with images
 
       case 'svg':
       case 'svg-all':

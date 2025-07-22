@@ -187,13 +187,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
                 <div className="mb-4">
                   <label className="block text-xs font-medium text-gray-300 mb-2">画像生成</label>
                   <select
-                    value={settings.aiModels?.imageGeneration || 'gemini-1.5-pro'}
+                    value={settings.aiModels?.imageGeneration || 'imagen-3'}
                     onChange={(e) => handleSettingChange('aiModels', {
                       ...(settings.aiModels || {}),
                       imageGeneration: e.target.value
                     })}
                     className="w-full p-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:border-blue-500"
                   >
+                    <option value="gemini-2.0-flash-exp" className="bg-gray-800 text-white">Gemini 2.0 Flash Experimental (Text + Image)</option>
+                    <option value="gemini-2.0-flash" className="bg-gray-800 text-white">Gemini 2.0 Flash (Text + Image)</option>
                     <option value="imagen-4" className="bg-gray-800 text-white">Imagen 4</option>
                     <option value="imagen-3" className="bg-gray-800 text-white">Imagen 3</option>
                   </select>

@@ -54,6 +54,7 @@ export const exportAsPPTX = async (
         height: canvasHeight,
         quality: 1.0,
         pixelRatio: 1, // Use 1:1 ratio for exact sizing
+        skipFonts: true, // Skip embedding external fonts to avoid CORS issues
         style: {
           transform: 'none', // Ignore any transforms
           margin: '0',
@@ -222,6 +223,7 @@ export const exportSlidesAsPPTX = async (
         height: canvasHeight,
         quality: 1.0,
         pixelRatio: 1, // Use 1:1 ratio for exact sizing
+        skipFonts: true, // Skip embedding external fonts to avoid CORS issues
         style: {
           transform: 'none', // Ignore any transforms
           margin: '0',

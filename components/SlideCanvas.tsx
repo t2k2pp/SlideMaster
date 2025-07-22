@@ -42,6 +42,7 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
   const [showShapeDropdown, setShowShapeDropdown] = useState(false);
 
   const canvasSize = CANVAS_SIZES[slide.aspectRatio];
+  
   const selectedLayer = slide.layers.find(layer => layer.id === viewState.selectedLayerId);
 
   // Generate grid style based on background color and zoom level
@@ -500,6 +501,9 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
 
   const renderTextLayer = (layer: TextLayer) => {
     const textStyle = TEXT_STYLES.find(s => s.id === layer.textStyleId)?.style || {};
+    
+    const calculatedWidth = (layer.width / 100) * canvasSize.width;
+    const calculatedHeight = (layer.height / 100) * canvasSize.height;
     
     const style: React.CSSProperties = {
       position: 'absolute',
