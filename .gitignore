@@ -8,6 +8,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
++node_modules_new
 dist
 dist-ssr
 *.local
@@ -23,3 +24,5 @@ backup
 *.njsproj
 *.sln
 *.sw?
+.claude
+CLAUDE.md
