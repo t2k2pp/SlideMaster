@@ -20,8 +20,12 @@ import {
 import { addPageNumbersToSlides, getRecommendedPageNumberSettings } from '../utils/pageNumbers';
 import { createVersionMetadata } from '../utils/versionManager';
 import { getOptimalFontSettings, getOptimalTextSpacing, ensureAccessibleContrast } from '../utils/fontOptimization';
+import { selectLayoutTemplate, calculateImageForSlide, getLayoutTemplate } from '../utils/layoutSelector';
+import { createLayersFromTemplate } from '../utils/layerFactory';
 import { getGeminiClient, getAI, getTemperatureForTask, handleGeminiError } from './geminiApiClient';
 import { generateImage } from './geminiImageService';
+import { getDesignerLayoutPrompt, selectDesignerForPurpose } from './designerLayoutService';
+import { aiHistory, calculateEstimatedCost } from './aiInteractionHistoryService';
 
 // =================================================================
 // Gemini Text Generation Service
@@ -324,7 +328,21 @@ BUSINESS REQUIREMENTS:
  * Determine optimal purpose for a topic
  */
 export const determineOptimalPurpose = async (topic: string, userApiKey?: string): Promise<string> => {
+  // Detect language and add appropriate guidance
+  const isJapaneseInput = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(topic);
+  
   const prompt = `Analyze the topic "${topic}" and determine the most appropriate presentation purpose.
+
+${isJapaneseInput ? `
+**重要な判定基準（日本語コンテンツ用）:**
+- 「〜の話」「〜の物語」「〜の童話」「〜のお話」「〜を題材にした物語」など → 必ず 'storytelling'
+- 「話を作成して」「物語を作って」「童話を書いて」 → 必ず 'storytelling'  
+- 「〜から学ぶ」「〜を活用した」「〜をベースにした教材」など → 'educational_content' または 'business_presentation'
+- 「〜の分析」「〜をケーススタディとして」「〜から考える戦略」など → 'business_presentation'
+- 子供向けに「〜を教える」「〜で学ぼう」など → 'children_content'
+
+**最重要**: 「の話」「を作成」が組み合わさったら99%storytellingです。例外はほぼありません。
+` : ''}
 
 AVAILABLE PURPOSES:
 - storytelling: For narratives, stories, fairy tales, adventures, traditional storytelling
@@ -346,7 +364,11 @@ AVAILABLE PURPOSES:
 
 SPECIAL CONSIDERATIONS:
 - For game books, interactive stories, or choose-your-own-adventure content, use 'game_content'
-- For traditional children's stories or fairy tales, use 'storytelling'
+- CRITICAL: If the request contains phrases like "の話を作成" or "話を作って", it's ALWAYS 'storytelling'
+- "桃太郎の話を作成して" = 100% storytelling (NOT business presentation)
+- "桃太郎の話" = storytelling, but "桃太郎から学ぶリーダーシップ" = business_presentation
+- "童話を題材にしたXXX" depends on what XXX is (analysis=business, story=storytelling, lesson=educational)
+- When Japanese users say "の話を作成して" they want a STORY, not business analysis
 - Consider target audience age and interactivity level
 
 Return the most appropriate purpose based on the topic content and intent.`;
@@ -388,6 +410,14 @@ Return the most appropriate purpose based on the topic content and intent.`;
 
   } catch (error) {
     console.error("Error determining optimal purpose:", error);
+    
+    // Fallback logic: if topic contains story-related terms, default to storytelling
+    if (/(?:の話|物語|童話|お話).*(?:作成|作って|書いて)/.test(topic) || 
+        /(?:作成|作って|書いて).*(?:の話|物語|童話|お話)/.test(topic)) {
+      console.log("Fallback: Detected story creation request, using storytelling");
+      return 'storytelling';
+    }
+    
     return 'business_presentation';
   }
 };
@@ -454,6 +484,29 @@ Return the most suitable theme name.`;
  * Generate a complete presentation
  */
 export const generatePresentation = async (request: SlideGenerationRequest, userApiKey?: string): Promise<Presentation> => {
+  // Start AI interaction history recording
+  const model = getTextGenerationModel();
+  const interactionId = aiHistory.startInteraction(
+    'slide_creation',
+    'gemini',
+    model,
+    {
+      prompt: `Topic: ${request.topic}`,
+      context: `Purpose: ${request.purpose}, Theme: ${request.theme}, Slides: ${request.slideCount}`,
+      settings: {
+        slideCount: request.slideCount,
+        autoSlideCount: request.autoSlideCount,
+        purpose: request.purpose,
+        theme: request.theme,
+        designer: request.designer,
+        aspectRatio: request.aspectRatio,
+        includeImages: request.includeImages,
+        imageFrequency: request.imageFrequency,
+        speakerNotes: request.speakerNotesSettings
+      }
+    }
+  );
+
   try {
     console.log('Starting presentation generation with request:', {
       topic: request.topic,
@@ -469,47 +522,90 @@ export const generatePresentation = async (request: SlideGenerationRequest, user
       actualSlideCount = await determineOptimalSlideCount(request.topic, userApiKey);
       console.log(`Auto-determined slide count: ${actualSlideCount}`);
     }
-
-    // Get theme configuration
-    const themeConfig = THEME_CONFIGS[request.theme as keyof typeof THEME_CONFIGS] || THEME_CONFIGS.professional;
     
-    // Build the generation prompt
-    const purposePrompt = getPurposePromptTemplate(request.purpose, request.topic, actualSlideCount, request.includeImages);
+    // Determine actual purpose, theme, and designer (handle auto selections)
+    let actualPurpose = request.purpose;
+    let actualTheme = request.theme;
+    let actualDesigner = request.designer || 'auto';
+    
+    if (request.purpose === 'auto') {
+      actualPurpose = await determineOptimalPurpose(request.topic, userApiKey);
+      console.log(`Auto-determined purpose: ${actualPurpose}`);
+    }
+    
+    if (request.theme === 'auto') {
+      actualTheme = await determineOptimalTheme(request.topic, actualPurpose, userApiKey);
+      console.log(`Auto-determined theme: ${actualTheme}`);
+    }
+    
+    // Handle designer auto-selection
+    if (actualDesigner === 'auto') {
+      actualDesigner = selectDesignerForPurpose(actualPurpose);
+      console.log(`Auto-selected designer: ${actualDesigner} for purpose: ${actualPurpose}`);
+    }
+
+    // Get theme configuration using actual theme
+    const themeConfig = THEME_CONFIGS[actualTheme as keyof typeof THEME_CONFIGS] || THEME_CONFIGS.professional;
+    
+    // Build the generation prompt using actual purpose
+    const purposePrompt = getPurposePromptTemplate(actualPurpose, request.topic, actualSlideCount, request.includeImages);
     const speakerNotesPrompt = generateSpeakerNotesPrompt(request.speakerNotesSettings);
+    
+    // Get designer-specific layout instructions
+    const designerLayoutPrompt = getDesignerLayoutPrompt(actualDesigner, actualPurpose);
+    console.log(`Using designer: ${actualDesigner} with layout strategy for purpose: ${actualPurpose}`);
 
-    const systemPrompt = `You are an expert presentation creator. Generate a comprehensive ${actualSlideCount}-slide presentation.
+    // Detect language from topic and prepare language-aware prompt
+    const isJapaneseInput = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(request.topic);
+    
+    // Build the generation prompt using the correctly determined purpose
+    const prompt = purposePrompt + `
 
-${purposePrompt}
+THEME: ${actualTheme}
 
-FORMAT REQUIREMENTS:
-- Each slide must have exactly one main heading (slide title)
-- Content should be clear, engaging, and well-structured
-- Use bullet points, numbered lists, or paragraphs as appropriate
-- Ensure logical flow between slides
-- Keep text concise but informative
+DESIGNER LAYOUT STRATEGY:
+${designerLayoutPrompt}
 
-SPEAKER NOTES:
-${speakerNotesPrompt}
+重要: このデザイナーの哲学と原則に従ってスライドレイアウトを考慮してください。各スライドの配置、強調要素、スペーシングはデザイナーの戦略に基づいて決定してください。
 
-QUALITY STANDARDS:
-- Professional writing and grammar
-- Engaging and appropriate content
-- Clear visual hierarchy
-- Consistent style throughout
-- Relevant and purposeful content`;
+${isJapaneseInput ? `
+**重要: 日本語で回答してください（画像プロンプトを除く）**
+- すべてのスライドタイトル、内容、スピーカーノートを日本語で生成してください
+- 日本の文化や文脈に適した内容にしてください
+- 自然で読みやすい日本語を使用してください
+- ただし、imagePromptは必ず英語で記述してください（画像生成APIが英語を必要とするため）
+` : `
+**Important: Respond in English**
+- Generate all slide titles, content, and speaker notes in English
+- Use clear, professional English appropriate for presentations
+`}
+
+PRESENTATION NAMING:
+- Create a concise, descriptive title that summarizes the main topic
+- If the input topic is long text, extract the key concept for the title
+- The title should be suitable for display in headers and file names
+- Maximum 60 characters for the title
+
+For each slide, provide:
+1. title: Clear, engaging slide title
+2. content: Main content (bullet points, explanations, key messages)
+3. imagePrompt: ${request.includeImages ? 'IMPORTANT: Always provide detailed English description for relevant image (even if content is in Japanese)' : 'null'}
+4. notes: ${speakerNotesPrompt !== 'null' ? 'Speaker notes for this slide' : 'null'}
+
+Structure the content logically and ensure smooth flow between slides.`;
 
     const ai = getGeminiClient(userApiKey);
     const response = await ai.models.generateContent({
       model: getTextGenerationModel(),
-      contents: [
-        { role: 'user', parts: [{ text: systemPrompt }] }
-      ],
+      contents: prompt,
       config: {
         temperature: getTemperatureForTask('slide_generation'),
         responseMimeType: "application/json",
         responseSchema: {
           type: "object",
           properties: {
+            title: { type: "string", description: "Presentation title (concise, descriptive summary)" },
+            description: { type: "string", description: "Presentation description" },
             slides: {
               type: "array",
               items: {
@@ -524,7 +620,7 @@ QUALITY STANDARDS:
               }
             }
           },
-          required: ['slides']
+          required: ['title', 'description', 'slides']
         }
       }
     });
@@ -540,126 +636,120 @@ QUALITY STANDARDS:
     // Process slides and generate images if requested
     const slides: Slide[] = await Promise.all(
       result.slides.slice(0, actualSlideCount).map(async (slideData: any, index: number): Promise<Slide> => {
+        // Determine if this slide should have an image based on frequency setting
+        const shouldHaveImage = request.includeImages && slideData.imagePrompt && slideData.imagePrompt !== 'null' && 
+          calculateImageForSlide(index, request.imageFrequency || 'every_slide');
+        
+        // Select appropriate layout template
+        const layoutType = selectLayoutTemplate(index, actualSlideCount, shouldHaveImage, actualPurpose);
+        const template = getLayoutTemplate(layoutType);
+
         const slide: Slide = {
           id: `slide-${index + 1}`,
           title: slideData.title || `Slide ${index + 1}`,
-          layers: [],
           background: themeConfig.backgroundColor,
           aspectRatio: request.aspectRatio,
+          template: index === 0 ? 'title' : index === actualSlideCount - 1 ? 'ending' : 'content',
           notes: slideData.speakerNotes || '',
+          layers: [],
         };
 
-        // Add title layer with dynamic font optimization
-        const titleFontSettings = getOptimalFontSettings(
-          request.theme,
-          request.purpose,
-          request.aspectRatio,
-          'title',
-          slideData.title || `Slide ${index + 1}`,
-          CANVAS_SIZES[request.aspectRatio].width - 200,
-          120
-        );
+        // Create layers from template
+        const layers = createLayersFromTemplate(template, {
+          title: slideData.title,
+          content: slideData.content,
+          imagePrompt: slideData.imagePrompt
+        }, 0);
         
-        const titleSpacing = getOptimalTextSpacing(titleFontSettings.fontSize);
-        const titleAccessibility = ensureAccessibleContrast(
-          themeConfig.textColor,
-          themeConfig.backgroundColor,
-          titleFontSettings.fontSize
-        );
+        // Ensure title layer exists if template defines it
+        const hasTitleLayer = layers.some(layer => layer.type === 'text' && (layer as TextLayer).textStyleId === 'title');
+        if (template.title && slideData.title && !hasTitleLayer) {
+          console.warn(`Title layer missing for slide ${index + 1}, template: ${layoutType}`);
+        }
 
-        const titleLayer: TextLayer = {
-          ...DEFAULT_LAYER_PROPS,
-          id: `title-${index + 1}`,
-          type: 'text',
-          x: 100,
-          y: 80,
-          width: CANVAS_SIZES[request.aspectRatio].width - 200,
-          height: 120,
-          content: slideData.title || `Slide ${index + 1}`,
-          fontSize: titleFontSettings.fontSize,
-          fontFamily: titleFontSettings.fontFamily,
-          fontWeight: titleFontSettings.fontWeight,
-          textStyleId: 'title',
-          textColor: titleAccessibility.color,
-          textAlign: 'center',
-          zIndex: 1,
-          ...(titleAccessibility.textShadow && { textShadow: titleAccessibility.textShadow })
-        };
-        slide.layers.push(titleLayer);
-
-        // Add content layer with dynamic font optimization
-        const contentFontSettings = getOptimalFontSettings(
-          request.theme,
-          request.purpose,
-          request.aspectRatio,
-          'body',
-          slideData.content || '',
-          CANVAS_SIZES[request.aspectRatio].width - 200,
-          CANVAS_SIZES[request.aspectRatio].height - 320
-        );
-        
-        const contentSpacing = getOptimalTextSpacing(contentFontSettings.fontSize);
-        const contentAccessibility = ensureAccessibleContrast(
-          themeConfig.textColor,
-          themeConfig.backgroundColor,
-          contentFontSettings.fontSize
-        );
-
-        const contentLayer: TextLayer = {
-          ...DEFAULT_LAYER_PROPS,
-          id: `content-${index + 1}`,
-          type: 'text',
-          x: 100,
-          y: 220,
-          width: CANVAS_SIZES[request.aspectRatio].width - 200,
-          height: CANVAS_SIZES[request.aspectRatio].height - 320,
-          content: slideData.content || '',
-          fontSize: contentFontSettings.fontSize,
-          fontFamily: contentFontSettings.fontFamily,
-          fontWeight: contentFontSettings.fontWeight,
-          textStyleId: 'body',
-          textColor: contentAccessibility.color,
-          textAlign: 'left',
-          zIndex: 2,
-          ...(contentAccessibility.textShadow && { textShadow: contentAccessibility.textShadow })
-        };
-        slide.layers.push(contentLayer);
-
-        // Generate image if requested and prompt is provided
-        if (request.includeImages && slideData.imagePrompt) {
-          try {
-            const imageData = await generateImage(
-              slideData.imagePrompt,
-              request.imageSettings,
-              request.purpose,
-              index,
-              [],
-              undefined,
-              userApiKey
+        // Apply theme colors and minimal font optimization to text layers
+        for (const layer of layers) {
+          if (layer.type === 'text') {
+            const textLayer = layer as TextLayer;
+            
+            // Apply accessibility colors but preserve template font sizes
+            const accessibility = ensureAccessibleContrast(
+              themeConfig.textColor,
+              themeConfig.backgroundColor,
+              textLayer.fontSize  // Use template's original fontSize
             );
 
-            const imageLayer: ImageLayer = {
-              ...DEFAULT_LAYER_PROPS,
-              id: `image-${index + 1}`,
-              type: 'image',
-              x: CANVAS_SIZES[request.aspectRatio].width - 400,
-              y: 220,
-              width: 300,
-              height: 200,
-              src: imageData,
-              prompt: slideData.imagePrompt || '',
-              objectFit: 'cover',
-              zIndex: 3
-            };
-            slide.layers.push(imageLayer);
+            // Apply theme styling but preserve layout template sizing
+            const elementType = textLayer.textStyleId === 'title' ? 'title' : 'body';
+            const fontSettings = getOptimalFontSettings(
+              actualTheme,
+              actualPurpose,
+              request.aspectRatio,
+              elementType as any,
+              textLayer.content,
+              CANVAS_SIZES[request.aspectRatio].width * (textLayer.width / 100),
+              CANVAS_SIZES[request.aspectRatio].height * (textLayer.height / 100)
+            );
 
-            // Adjust content layer to make room for image
-            contentLayer.width = CANVAS_SIZES[request.aspectRatio].width - 520;
-          } catch (imageError) {
-            console.warn(`Failed to generate image for slide ${index + 1}:`, imageError);
+            // Update layer with theme styling but keep template dimensions
+            textLayer.fontFamily = fontSettings.fontFamily;
+            textLayer.fontWeight = fontSettings.fontWeight;
+            textLayer.textColor = accessibility.color;
+            // Preserve template fontSize instead of using optimized size
+            // textLayer.fontSize = fontSettings.fontSize;  // COMMENTED OUT
+            if (accessibility.textShadow) {
+              textLayer.textShadow = accessibility.textShadow;
+            }
           }
         }
 
+        // Generate images for image layers
+        for (const layer of layers) {
+          if (layer.type === 'image' && shouldHaveImage) {
+            const imageLayer = layer as ImageLayer;
+            try {
+              const imageData = await generateImage(
+                imageLayer.prompt || slideData.imagePrompt || '',
+                request.imageGenerationSettings,
+                actualPurpose,
+                index,
+                [],
+                undefined,
+                userApiKey
+              );
+              imageLayer.src = imageData;
+              
+              // 画像の寸法を取得して設定
+              try {
+                const { getImageDimensions } = await import('./geminiImageService');
+                const dimensions = await getImageDimensions(imageData);
+                imageLayer.naturalWidth = dimensions.width;
+                imageLayer.naturalHeight = dimensions.height;
+              } catch (dimensionError) {
+                console.warn('Failed to get image dimensions:', dimensionError);
+                // デフォルト値を設定（1280x720 - 16:9比率）
+                imageLayer.naturalWidth = 1280;
+                imageLayer.naturalHeight = 720;
+              }
+            } catch (imageError) {
+              // Only log first few image generation failures to reduce console spam
+              if (index < 2) {
+                console.warn(`Failed to generate image for slide ${index + 1}:`, imageError);
+                if (index === 1) {
+                  console.warn('🔇 Further image generation errors will be suppressed to reduce console noise. Image generation is currently unavailable but presentations will continue to generate successfully.');
+                }
+              }
+              // Keep image layer even if generation failed (preserves prompt for retry)
+              // Set placeholder image instead of removing layer
+              imageLayer.src = `https://placehold.co/1280x720/1a202c/e2e8f0?text=Image+Generation+Failed`;
+              // プレースホルダー画像の寸法を設定
+              imageLayer.naturalWidth = 1280;
+              imageLayer.naturalHeight = 720;
+            }
+          }
+        }
+
+        slide.layers = layers;
         return slide;
       })
     );
@@ -669,7 +759,7 @@ QUALITY STANDARDS:
       ? addPageNumbersToSlides(slides, request.pageNumberSettings, request.aspectRatio)
       : slides;
 
-    // Create slide source
+    // Create comprehensive slide source with all generation parameters
     const slideSource = {
       id: `source-${Date.now()}`,
       type: 'ai_generated' as const,
@@ -679,23 +769,86 @@ QUALITY STANDARDS:
       metadata: {
         generationMethod: 'ai_auto_generate',
         originalPrompt: request.topic,
+        
+        // Slide count information
         slideCount: actualSlideCount,
-        purpose: request.purpose,
-        theme: request.theme
+        autoSlideCount: request.autoSlideCount,
+        requestedSlideCount: request.slideCount,
+        
+        // Purpose information (with auto-selected values)
+        purpose: actualPurpose,
+        originalPurposeRequest: request.purpose,
+        purposeAutoSelected: request.purpose === 'auto',
+        
+        // Theme information (with auto-selected values)
+        theme: actualTheme,
+        originalThemeRequest: request.theme,
+        themeAutoSelected: request.theme === 'auto',
+        
+        // Designer information (with auto-selected values)
+        designer: actualDesigner,
+        originalDesignerRequest: request.designer || 'auto',
+        designerAutoSelected: (request.designer || 'auto') === 'auto',
+        
+        // Image settings
+        includeImages: request.includeImages,
+        imageFrequency: request.imageFrequency || 'every_slide',
+        imageGenerationSettings: request.imageGenerationSettings,
+        
+        // Layout and format
+        aspectRatio: request.aspectRatio,
+        
+        // Speaker notes settings
+        speakerNotesSettings: request.speakerNotesSettings,
+        
+        // Page numbering
+        pageNumberSettings: request.pageNumberSettings,
+        
+        // Additional context
+        context: request.context,
+        slideCountMode: request.slideCountMode,
+        
+        // Detected language
+        detectedLanguage: /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(request.topic) ? 'japanese' : 'english',
+        
+        // Generation timestamp and environment
+        generatedAt: new Date().toISOString(),
+        userAgent: navigator.userAgent,
+        platform: navigator.platform
       }
     };
 
-    // Create generation history
+    // Create comprehensive generation history
     const historyItem = {
       method: 'ai_generation' as const,
       timestamp: new Date(),
       sourceId: slideSource.id,
       parameters: {
+        // Core parameters
         topic: request.topic,
         slideCount: actualSlideCount,
-        purpose: request.purpose,
-        theme: request.theme,
-        includeImages: request.includeImages
+        autoSlideCount: request.autoSlideCount,
+        requestedSlideCount: request.slideCount,
+        
+        // Selected values (including auto-selected)
+        purpose: actualPurpose,
+        theme: actualTheme,
+        designer: actualDesigner,
+        originalPurposeRequest: request.purpose,
+        originalThemeRequest: request.theme,
+        originalDesignerRequest: request.designer || 'auto',
+        
+        // All generation settings
+        includeImages: request.includeImages,
+        imageFrequency: request.imageFrequency,
+        aspectRatio: request.aspectRatio,
+        context: request.context,
+        slideCountMode: request.slideCountMode,
+        speakerNotesEnabled: request.speakerNotesSettings?.enabled || false,
+        pageNumbersEnabled: request.pageNumberSettings?.enabled || false,
+        
+        // Detection results
+        detectedLanguage: /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(request.topic) ? 'japanese' : 'english'
       }
     };
 
@@ -705,9 +858,10 @@ QUALITY STANDARDS:
     // Create final presentation
     const presentation: Presentation = {
       id: `presentation-${Date.now()}`,
-      title: request.topic,
-      description: `Generated presentation about ${request.topic}`,
-      theme: request.theme,
+      title: result.title || request.topic,
+      description: result.description || `Generated presentation about ${request.topic}`,
+      theme: actualTheme,
+      purpose: actualPurpose,
       slides: finalSlides,
       settings: {
         defaultBackground: themeConfig.backgroundColor,
@@ -715,7 +869,7 @@ QUALITY STANDARDS:
         autoSave: true,
         snapToGrid: true,
         showGrid: false,
-        pageNumbers: request.pageNumberSettings || getRecommendedPageNumberSettings(request.purpose, actualSlideCount),
+        pageNumbers: request.pageNumberSettings || getRecommendedPageNumberSettings(actualPurpose, actualSlideCount),
       },
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -728,10 +882,33 @@ QUALITY STANDARDS:
     };
 
     console.log(`Successfully generated presentation with ${finalSlides.length} slides`);
+    
+    // Record successful completion in AI interaction history
+    aiHistory.completeInteraction(
+      interactionId,
+      {
+        content: `Generated presentation "${presentation.title}" with ${finalSlides.length} slides`,
+        metadata: {
+          contentType: 'presentation',
+          modelUsed: model,
+          quality: 1.0 // Could be calculated based on success metrics
+        }
+      },
+      calculateEstimatedCost('gemini', model, 1000, 2000) // Rough estimate
+    );
+    
     return presentation;
 
   } catch (error) {
     console.error('Error generating presentation:', error);
+    
+    // Record error in AI interaction history
+    aiHistory.recordError(interactionId, {
+      code: 'PRESENTATION_GENERATION_ERROR',
+      message: error instanceof Error ? error.message : 'Unknown error during presentation generation',
+      details: error
+    });
+    
     throw handleGeminiError(error, 'Presentation Generation');
   }
 };
@@ -740,6 +917,23 @@ QUALITY STANDARDS:
  * Generate individual element
  */
 export const generateElement = async (request: ElementGenerationRequest, userApiKey?: string): Promise<Layer> => {
+  // Start AI interaction history recording
+  const model = getTextGenerationModel();
+  const interactionId = aiHistory.startInteraction(
+    request.type === 'text' ? 'text_generation' : 'layout_generation',
+    'gemini',
+    model,
+    {
+      prompt: request.prompt,
+      context: request.slideContext,
+      settings: {
+        type: request.type,
+        position: request.position,
+        size: request.size
+      }
+    }
+  );
+
   try {
     const ai = getGeminiClient(userApiKey);
     
@@ -773,16 +967,20 @@ Provide appropriate content for a ${request.elementType} element.`;
 
     // Create layer based on element type
     const baseLayer = {
-      ...DEFAULT_LAYER_PROPS,
       id: `generated-${Date.now()}`,
-      x: 100,
-      y: 100,
-      width: 400,
-      height: 200,
+      x: 10,
+      y: 10,
+      width: 80,
+      height: 20,
+      rotation: 0,
+      opacity: 1,
+      zIndex: 0,
     };
 
+    let generatedLayer: Layer;
+    
     if (request.elementType === 'text') {
-      return {
+      generatedLayer = {
         ...baseLayer,
         type: 'text',
         content: result.content,
@@ -801,17 +999,41 @@ Provide appropriate content for a ${request.elementType} element.`;
         userApiKey
       );
       
-      return {
+      generatedLayer = {
         ...baseLayer,
         type: 'image',
         src: imageData,
       } as ImageLayer;
+    } else {
+      throw new Error(`Unsupported element type: ${request.elementType}`);
     }
 
-    throw new Error(`Unsupported element type: ${request.elementType}`);
+    // Record successful completion in AI interaction history
+    aiHistory.completeInteraction(
+      interactionId,
+      {
+        content: `Generated ${request.elementType} element: ${result.content.substring(0, 100)}...`,
+        metadata: {
+          contentType: request.elementType,
+          modelUsed: model,
+          quality: 1.0
+        }
+      },
+      calculateEstimatedCost('gemini', model, 200, 300) // Rough estimate for element generation
+    );
+
+    return generatedLayer;
 
   } catch (error) {
     console.error('Error generating element:', error);
+    
+    // Record error in AI interaction history
+    aiHistory.recordError(interactionId, {
+      code: 'ELEMENT_GENERATION_ERROR',
+      message: error instanceof Error ? error.message : 'Unknown error during element generation',
+      details: error
+    });
+    
     throw handleGeminiError(error, 'Element Generation');
   }
 };

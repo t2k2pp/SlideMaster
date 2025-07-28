@@ -44,10 +44,13 @@ const generateSlideHTML = (slide: any, index: number) => {
         `;
       
       case 'image':
+        const borderRadius = layer.objectFit === 'circle' || layer.objectFit === 'circle-fit' ? '50%' : '0';
+        const objectFit = layer.objectFit === 'circle' || layer.objectFit === 'circle-fit' ? 
+          (layer.objectFit === 'circle-fit' ? 'contain' : 'cover') : layer.objectFit;
         return layer.src ? `
           <div style="${baseStyle}">
             <img src="${layer.src}" 
-                 style="width: 100%; height: 100%; object-fit: ${layer.objectFit}; border-radius: 8px;"
+                 style="width: 100%; height: 100%; object-fit: ${objectFit}; border-radius: ${borderRadius};"
                  alt="Slide image" />
           </div>
         ` : '';

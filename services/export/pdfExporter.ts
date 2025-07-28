@@ -1,4 +1,4 @@
-import { Presentation, ExportResult } from '../../types';
+import { Presentation, ExportResult, TextLayer, ImageLayer } from '../../types';
 import { saveAs } from 'file-saver';
 import jsPDF from 'jspdf';
 import * as htmlToImage from 'html-to-image';
@@ -53,6 +53,9 @@ export const exportAsPDF = async (
           await waitForSlideRender();
         }
 
+        // Get slide background color
+        const slideBackground = slide.background || presentation.settings?.defaultBackground || '#ffffff';
+        
         // Capture the slide as image
         const dataUrl = await htmlToImage.toJpeg(canvasElement, {
           width: canvasWidth,
@@ -60,7 +63,7 @@ export const exportAsPDF = async (
           quality: 0.95,
           pixelRatio: 2,
           skipFonts: true, // Skip external fonts to avoid CORS issues
-          backgroundColor: '#ffffff',
+          backgroundColor: slideBackground,
           style: {
             transform: 'none',
             margin: '0',
@@ -146,6 +149,10 @@ export const exportSlidesAsPDF = async (
           await waitForSlideRender();
         }
 
+        // Get slide background color
+        const slide = presentation.slides[slideIndex];
+        const slideBackground = slide.background || presentation.settings?.defaultBackground || '#ffffff';
+        
         // Capture the slide as image
         const dataUrl = await htmlToImage.toJpeg(canvasElement, {
           width: canvasWidth,
@@ -153,7 +160,7 @@ export const exportSlidesAsPDF = async (
           quality: 0.95,
           pixelRatio: 2,
           skipFonts: true, // Skip external fonts to avoid CORS issues
-          backgroundColor: '#ffffff',
+          backgroundColor: slideBackground,
           style: {
             transform: 'none',
             margin: '0',
@@ -260,6 +267,10 @@ export const exportAsPDFWithOptions = async (
           await waitForSlideRender();
         }
 
+        // Get slide background color
+        const slide = presentation.slides[slideIndex];
+        const slideBackground = slide.background || presentation.settings?.defaultBackground || '#ffffff';
+        
         // Capture the slide as image
         const dataUrl = await htmlToImage.toJpeg(canvasElement, {
           width: canvasWidth,
@@ -267,7 +278,7 @@ export const exportAsPDFWithOptions = async (
           quality: options.quality || 0.95,
           pixelRatio: 2,
           skipFonts: true, // Skip external fonts to avoid CORS issues
-          backgroundColor: '#ffffff',
+          backgroundColor: slideBackground,
           style: {
             transform: 'none',
             margin: '0',
@@ -303,6 +314,123 @@ export const exportAsPDFWithOptions = async (
     return createSuccessResult(filename, 'pdf');
   } catch (error) {
     console.error('Custom PDF export error:', error);
+    return createErrorResult(error);
+  }
+};
+
+/**
+ * Export presentation as structured PDF (searchable text)
+ */
+export const exportAsPDFStructured = async (
+  presentation: Presentation, 
+  onSlideChange?: (slideIndex: number) => void,
+  onProgress?: (current: number, total: number) => void
+): Promise<ExportResult> => {
+  try {
+    validatePresentation(presentation);
+
+    const { width: canvasWidth, height: canvasHeight } = getCanvasDimensions(presentation);
+    
+    // Calculate PDF dimensions based on aspect ratio
+    const aspectRatio = canvasWidth / canvasHeight;
+    const pdfWidth = 297; // A4 width in mm
+    const pdfHeight = pdfWidth / aspectRatio;
+    
+    // Create PDF document
+    const pdf = new jsPDF({
+      orientation: aspectRatio > 1 ? 'landscape' : 'portrait',
+      unit: 'mm',
+      format: [pdfWidth, pdfHeight]
+    });
+
+    // Process each slide
+    await batchProcess(
+      presentation.slides,
+      async (slide, index) => {
+        // Add page for each slide (except the first one)
+        if (index > 0) {
+          pdf.addPage();
+        }
+
+        // Set background color if specified
+        if (slide.backgroundColor) {
+          pdf.setFillColor(slide.backgroundColor);
+          pdf.rect(0, 0, pdfWidth, pdfHeight, 'F');
+        }
+
+        // Add each layer as structured content
+        for (const layer of slide.layers) {
+          const xMm = (layer.x / 100) * pdfWidth;
+          const yMm = (layer.y / 100) * pdfHeight;
+          const wMm = (layer.width / 100) * pdfWidth;
+          const hMm = (layer.height / 100) * pdfHeight;
+
+          if (layer.type === 'text') {
+            const textLayer = layer as TextLayer;
+            
+            // Set font properties
+            pdf.setFontSize(Math.max(8, Math.min(72, textLayer.fontSize * 0.35))); // Convert to reasonable PDF font size
+            pdf.setTextColor(textLayer.textColor || '#000000');
+            
+            // Handle font weight
+            if (textLayer.fontWeight === 'bold') {
+              pdf.setFont('helvetica', 'bold');
+            } else {
+              pdf.setFont('helvetica', 'normal');
+            }
+
+            // Split text into lines that fit within the specified width
+            const lines = pdf.splitTextToSize(textLayer.content, wMm);
+            
+            // Calculate text alignment
+            let align: 'left' | 'center' | 'right' = 'left';
+            if (textLayer.textAlign === 'center') align = 'center';
+            else if (textLayer.textAlign === 'right') align = 'right';
+            
+            // Add text with proper positioning
+            pdf.text(lines, xMm, yMm + (textLayer.fontSize * 0.35), {
+              align: align,
+              maxWidth: wMm
+            });
+            
+          } else if (layer.type === 'image') {
+            const imageLayer = layer as ImageLayer;
+            
+            if (imageLayer.src && imageLayer.src.startsWith('data:image/')) {
+              try {
+                // Add image to PDF
+                pdf.addImage(imageLayer.src, 'JPEG', xMm, yMm, wMm, hMm);
+              } catch (error) {
+                console.warn('Error adding image to PDF:', error);
+                // Add placeholder text instead
+                pdf.setFontSize(10);
+                pdf.setTextColor('#666666');
+                pdf.text(`[Image: ${imageLayer.prompt || 'Image failed to load'}]`, xMm, yMm + 5);
+              }
+            } else if (imageLayer.prompt) {
+              // Add placeholder for missing images
+              pdf.setFontSize(10);
+              pdf.setTextColor('#666666');
+              pdf.text(`[Image: ${imageLayer.prompt}]`, xMm, yMm + 5);
+            }
+          }
+        }
+        
+        // Add slide number
+        pdf.setFontSize(8);
+        pdf.setTextColor(128);
+        pdf.text(`${index + 1}`, pdfWidth - 10, pdfHeight - 5);
+      },
+      onProgress
+    );
+
+    // Save PDF
+    const filename = generateFilename(presentation, 'pdf');
+    pdf.save(filename);
+
+    return createSuccessResult(filename, 'pdf-structured');
+  } catch (error) {
+    console.error('Structured PDF export error:', error);
     return createErrorResult(error);
   }
 };

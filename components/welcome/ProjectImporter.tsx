@@ -18,7 +18,7 @@ export const ProjectImporter: React.FC<ProjectImporterProps> = ({
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file && file.type === 'application/json') {
+    if (file && (file.type === 'application/zip' || file.name.endsWith('.zip'))) {
       onImportProject(file);
     }
     // Reset the input
@@ -30,7 +30,7 @@ export const ProjectImporter: React.FC<ProjectImporterProps> = ({
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     const file = event.dataTransfer.files[0];
-    if (file && file.type === 'application/json') {
+    if (file && (file.type === 'application/zip' || file.name.endsWith('.zip'))) {
       onImportProject(file);
     }
   };
@@ -67,17 +67,17 @@ export const ProjectImporter: React.FC<ProjectImporterProps> = ({
           Drop your presentation file here
         </h3>
         <p className="text-slate-600 dark:text-gray-300 mb-4">
-          or click to browse for a .json file
+          or click to browse for a .zip file
         </p>
         <div className="text-sm text-slate-500 dark:text-gray-400">
-          <p>Supported format: JSON files exported from SlideMaster</p>
+          <p>Supported format: ZIP project files exported from SlideMaster</p>
         </div>
       </div>
 
       <input
         ref={fileInputRef}
         type="file"
-        accept=".json,application/json"
+        accept=".zip,application/zip"
         onChange={handleFileSelect}
         className="hidden"
         disabled={isProcessing}
@@ -86,10 +86,10 @@ export const ProjectImporter: React.FC<ProjectImporterProps> = ({
       <div className="bg-slate-200 dark:bg-slate-800 rounded-lg p-4">
         <h4 className="font-semibold mb-2 text-slate-900 dark:text-white">Import Tips:</h4>
         <ul className="text-sm text-slate-500 dark:text-slate-400 space-y-1">
-          <li>• Only JSON files exported from SlideMaster are supported</li>
-          <li>• Your presentation will be loaded with all slides and settings</li>
-          <li>• Large presentations with many images may take longer to load</li>
-          <li>• Make sure your API key is configured for AI features</li>
+          <li>• Only ZIP project files exported from SlideMaster are supported</li>
+          <li>• Your presentation will be loaded with all slides, images, and settings</li>
+          <li>• Large projects with many images may take longer to load</li>
+          <li>• All embedded images and sources will be preserved</li>
         </ul>
       </div>
     </div>

@@ -85,7 +85,8 @@ export const exportPresentation = async (
   presentation: Presentation,
   options: ExportOptions,
   onSlideChange?: (slideIndex: number) => void,
-  onProgress?: (current: number, total: number) => void
+  onProgress?: (current: number, total: number) => void,
+  currentSlideIndex?: number
 ): Promise<ExportResult> => {
   try {
     switch (options.format) {
@@ -96,7 +97,7 @@ export const exportPresentation = async (
           return exportAllAsPNG(presentation, onSlideChange, onProgress);
         } else {
           const { exportAsPNG } = await import('./export/pngExporter');
-          return exportAsPNG(presentation, onSlideChange);
+          return exportAsPNG(presentation, onSlideChange, currentSlideIndex);
         }
 
       case 'jpeg':
@@ -106,20 +107,27 @@ export const exportPresentation = async (
           return exportAllAsJPEG(presentation, onSlideChange, onProgress, options.quality);
         } else {
           const { exportAsJPEG } = await import('./export/jpegExporter');
-          return exportAsJPEG(presentation, onSlideChange, options.quality);
+          return exportAsJPEG(presentation, onSlideChange, options.quality, currentSlideIndex);
         }
 
       case 'pdf':
-        const { exportAsPDF } = await import('./export/pdfExporter');
-        return exportAsPDF(presentation, onSlideChange, onProgress);
+        // Default to structured PDF (searchable text) unless explicitly disabled
+        if (options.structuredContent === false) {
+          const { exportAsPDF } = await import('./export/pdfExporter');
+          return exportAsPDF(presentation, onSlideChange, onProgress);
+        } else {
+          const { exportAsPDFStructured } = await import('./export/pdfExporter');
+          return exportAsPDFStructured(presentation, onSlideChange, onProgress);
+        }
 
       case 'pptx':
-        if (options.structuredContent) {
-          const { exportAsPPTXStructured } = await import('./export/pptxExporter');
-          return exportAsPPTXStructured(presentation, onSlideChange);
-        } else {
+        // Default to structured PPTX (editable objects) unless explicitly disabled
+        if (options.structuredContent === false) {
           const { exportAsPPTX } = await import('./export/pptxExporter');
           return exportAsPPTX(presentation, onSlideChange);
+        } else {
+          const { exportAsPPTXStructured } = await import('./export/pptxExporter');
+          return exportAsPPTXStructured(presentation, onSlideChange);
         }
 
       case 'html':
@@ -128,7 +136,7 @@ export const exportPresentation = async (
 
       case 'marp':
         const { exportAsMarp } = await import('./export/marpExporter');
-        return exportAsMarp(presentation);
+        return exportAsMarp(presentation, true); // includeImages: true for ZIP format with images
 
       case 'svg':
       case 'svg-all':
@@ -137,7 +145,7 @@ export const exportPresentation = async (
           return exportAllAsSVG(presentation, onSlideChange);
         } else {
           const { exportAsSVG } = await import('./export/svgExporter');
-          return exportAsSVG(presentation);
+          return exportAsSVG(presentation, currentSlideIndex);
         }
 
       case 'project':

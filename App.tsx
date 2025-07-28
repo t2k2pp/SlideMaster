@@ -239,7 +239,7 @@ const App: React.FC = () => {
     title: string, 
     theme: PresentationTheme = 'professional'
   ) => {
-    const themeConfig = THEME_CONFIGS[theme];
+    const themeConfig = THEME_CONFIGS[theme] || THEME_CONFIGS.professional;
     const versionMetadata = createVersionMetadata();
     
     const newPresentation: Presentation = {
@@ -410,7 +410,7 @@ const App: React.FC = () => {
   const addSlide = useCallback((index?: number) => {
     if (!appState.currentPresentation) return;
 
-    const themeConfig = THEME_CONFIGS[appState.currentPresentation.theme];
+    const themeConfig = THEME_CONFIGS[appState.currentPresentation.theme] || THEME_CONFIGS.professional;
     const newSlide: Slide = {
       id: `slide-${Date.now()}`,
       title: 'New Slide',
@@ -468,6 +468,29 @@ const App: React.FC = () => {
       currentSlideIndex: newCurrentIndex,
     }));
   }, [appState.currentPresentation, appState.currentSlideIndex]);
+
+  const duplicateSlide = useCallback((index: number, duplicatedSlide: Slide) => {
+    if (!appState.currentPresentation) return;
+
+    const newSlides = [...appState.currentPresentation.slides];
+    newSlides.splice(index, 0, duplicatedSlide);
+
+    // Update page numbers after adding duplicated slide
+    const slidesWithUpdatedPageNumbers = updateAllPageNumbers(
+      newSlides, 
+      appState.currentPresentation.settings.pageNumbers,
+      appState.currentPresentation.purpose || 'business_presentation'
+    );
+
+    setAppState(prev => ({
+      ...prev,
+      currentPresentation: prev.currentPresentation ? {
+        ...prev.currentPresentation,
+        slides: slidesWithUpdatedPageNumbers,
+      } : null,
+      currentSlideIndex: index,
+    }));
+  }, [appState.currentPresentation]);
 
   const reorderSlides = useCallback((fromIndex: number, toIndex: number) => {
     if (!appState.currentPresentation) return;
@@ -768,7 +791,9 @@ const App: React.FC = () => {
       const result = await exportService.exportPresentation(
         appState.currentPresentation, 
         options,
-        handleSlideChange
+        handleSlideChange,
+        undefined, // onProgress
+        originalSlideIndex // currentSlideIndex
       );
       
       // Restore original state
@@ -903,6 +928,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // テキスト入力中は通常のキーボード操作を許可
+      const target = e.target as HTMLElement;
+      const isTextInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.contentEditable === 'true';
+      
       if (e.ctrlKey || e.metaKey) {
         switch (e.key) {
           case 's':
@@ -918,28 +947,43 @@ const App: React.FC = () => {
             setShowAIAssistant(true);
             break;
           case 'c':
-            e.preventDefault();
-            copyLayer();
+            // テキスト入力中は通常のコピーを許可
+            if (!isTextInput) {
+              e.preventDefault();
+              copyLayer();
+            }
             break;
           case 'x':
-            e.preventDefault();
-            cutLayer();
+            // テキスト入力中は通常のカットを許可
+            if (!isTextInput) {
+              e.preventDefault();
+              cutLayer();
+            }
             break;
           case 'v':
-            e.preventDefault();
-            pasteLayer();
+            // テキスト入力中は通常のペーストを許可
+            if (!isTextInput) {
+              e.preventDefault();
+              pasteLayer();
+            }
             break;
           case 'z':
-            e.preventDefault();
-            if (e.shiftKey) {
-              redo();
-            } else {
-              undo();
+            // テキスト入力中は通常のUndoを許可
+            if (!isTextInput) {
+              e.preventDefault();
+              if (e.shiftKey) {
+                redo();
+              } else {
+                undo();
+              }
             }
             break;
           case 'y':
-            e.preventDefault();
-            redo();
+            // テキスト入力中は通常のRedoを許可
+            if (!isTextInput) {
+              e.preventDefault();
+              redo();
+            }
             break;
         }
       } else {
@@ -949,9 +993,69 @@ const App: React.FC = () => {
             startSlideShow(appState.currentSlideIndex);
             break;
           case 'Delete':
-            e.preventDefault();
-            if (selectedLayer) {
+            // テキスト入力中は通常のDeleteを許可
+            if (!isTextInput && selectedLayer) {
+              e.preventDefault();
               deleteLayer(selectedLayer.id);
+            }
+            break;
+          case 'ArrowLeft':
+            // テキスト入力中は通常のカーソル移動を許可
+            if (!isTextInput) {
+              e.preventDefault();
+              if (selectedLayer) {
+                // レイヤー選択時は微調整移動
+                updateLayer(selectedLayer.id, { x: Math.max(0, selectedLayer.x - 1) });
+              } else {
+                // スライド切り替え
+                const prevIndex = Math.max(0, appState.currentSlideIndex - 1);
+                setAppState(prev => ({ ...prev, currentSlideIndex: prevIndex }));
+              }
+            }
+            break;
+          case 'ArrowRight':
+            // テキスト入力中は通常のカーソル移動を許可
+            if (!isTextInput) {
+              e.preventDefault();
+              if (selectedLayer) {
+                // レイヤー選択時は微調整移動
+                updateLayer(selectedLayer.id, { x: Math.min(100, selectedLayer.x + 1) });
+              } else {
+                // スライド切り替え
+                const nextIndex = Math.min(appState.currentPresentation?.slides.length - 1 || 0, appState.currentSlideIndex + 1);
+                setAppState(prev => ({ ...prev, currentSlideIndex: nextIndex }));
+              }
+            }
+            break;
+          case 'ArrowUp':
+            // テキスト入力中は通常のカーソル移動を許可
+            if (!isTextInput && selectedLayer) {
+              e.preventDefault();
+              updateLayer(selectedLayer.id, { y: Math.max(0, selectedLayer.y - 1) });
+            }
+            break;
+          case 'ArrowDown':
+            // テキスト入力中は通常のカーソル移動を許可
+            if (!isTextInput && selectedLayer) {
+              e.preventDefault();
+              updateLayer(selectedLayer.id, { y: Math.min(100, selectedLayer.y + 1) });
+            }
+            break;
+          case 'Escape':
+            e.preventDefault();
+            if (showAIAssistant) {
+              setShowAIAssistant(false);
+            } else if (selectedLayer) {
+              setAppState(prev => ({
+                ...prev,
+                canvasState: {
+                  ...prev.canvasState,
+                  viewState: {
+                    ...prev.canvasState.viewState,
+                    selectedLayerId: null
+                  }
+                }
+              }));
             }
             break;
         }
@@ -960,7 +1064,7 @@ const App: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [savePresentation, addSlide, startSlideShow, appState.currentSlideIndex, copyLayer, cutLayer, pasteLayer, undo, redo, selectedLayer, deleteLayer]);
+  }, [savePresentation, addSlide, startSlideShow, appState.currentSlideIndex, copyLayer, cutLayer, pasteLayer, undo, redo, selectedLayer, deleteLayer, updateLayer, showAIAssistant, setShowAIAssistant, setAppState, appState.currentPresentation]);
 
   // =================================================================
   // Auto-save
@@ -1060,7 +1164,7 @@ const App: React.FC = () => {
         onStartSlideShow={() => startSlideShow(appState.currentSlideIndex)}
         onPageNumberManager={() => setShowPageNumberManager(true)}
         onVersionInfo={() => setShowVersionInfo(true)}
-        onApiKeyManager={() => setShowApiKeyManager(true)}
+        onSettings={() => setCurrentScreen('settings')}
         isProcessing={isProcessing}
         hasApiKey={isAIAvailable}
       />
@@ -1075,6 +1179,7 @@ const App: React.FC = () => {
             onSlideAdd={addSlide}
             onSlideDelete={deleteSlide}
             onSlideReorder={reorderSlides}
+            onSlideDuplicate={duplicateSlide}
           />
         )}
 

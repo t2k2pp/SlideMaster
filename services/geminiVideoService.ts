@@ -1,4 +1,5 @@
 import { getGeminiClient, getAI, getFileManager, getTemperatureForTask, handleGeminiError } from './geminiApiClient';
+import { aiHistory, calculateEstimatedCost } from './aiInteractionHistoryService';
 import { 
   Presentation, 
   Slide, 
@@ -48,93 +49,245 @@ const getVideoAnalysisModel = (): keyof typeof VIDEO_MODELS => {
 
 // Note: getAI is now imported from geminiApiClient for consistency
 
-// 動画分析用のプロンプト
-const VIDEO_ANALYSIS_PROMPT = `あなたは優秀なマニュアル作成担当者です。ユーザーがアップロードするツールの操作動画を見て、その動画の内容に基づいたマニュアルの文章を作成してください。明確で分かりやすい言葉を使い、ユーザーがツールの操作方法を容易に理解できるように努めてください。必要に応じて、ステップバイステップの手順、ヒント、および一般的な問題のトラブルシューティングを提供してください。
+// 動画用途に応じたプロンプト生成
+const getVideoAnalysisPrompt = (purpose: string) => {
+  const prompts = {
+    'tutorial_guide': `あなたは操作手順書作成の専門家です。動画を分析して、明確で分かりやすい操作手順を作成してください。初心者でも理解できるよう、具体的なステップごとに説明してください。
 
-マニュアルは画面のスクリーンショットを後から取りたいので、特に重要な画面の切り替えやスクリーンショットがあるところではタイムラインをまとめてください。
+【絶対禁止】以下の表現は使用しないでください：
+- 「マニュアル」
+- 「承知いたしました」 
+- 「作成します」
+- 「分析します」
+- その他、あなたの作業に関する言及
 
-スクリーンショットはあとから切り出しやすいように特定のタイムラインのみ指定してください。
+【必須】動画の内容そのものに集中し、実際のツール名や操作内容をタイトルにしてください。
+
+重要: 各セクションには必ず動画の該当タイムスタンプ（HH:MM:SS形式）を含めてください。
 
 # アウトプットフォーマット
-# {大見出し}
-## {小見出し}
-{動画のキャプチャ案とタイムライン 例: HH:MM:SS}
-{箇条書きで説明}
+# {実際のツール・システム名} 操作手順
+## {具体的な操作ステップタイトル}
+{動画のキャプチャ案とタイムライン HH:MM:SS}
+- 実行する操作の詳細説明
+- 注意事項やポイント
+- 期待される結果`,
 
-----
-# {大見出し}
-## {小見出し}
-{動画のキャプチャ案とタイムライン 例: HH:MM:SS}
-{箇条書きで説明}
+    'corporate_presentation': `あなたは企業向けプレゼンテーション作成の専門家です。動画を分析して、ビジネス向けの報告書やプレゼンテーション資料を作成してください。要点を整理し、意思決定に必要な情報を明確に提示してください。
 
----
+【絶対禁止】以下の表現は使用しないでください：
+- 「マニュアル」
+- 「承知いたしました」 
+- 「作成します」
+- 「分析します」
+- その他、あなたの作業に関する言及
 
-# 出力例 """
+【必須】動画の内容そのものに集中し、実際のプロジェクト名や内容をタイトルにしてください。
 
-# Creative Studio AI 操作マニュアル
+重要: 各セクションには必ず動画の該当タイムスタンプ（HH:MM:SS形式）を含めてください。
 
-このマニュアルでは、Creative Studio AIを使用してイベントポスターを生成し、編集、保存する基本的な操作方法を説明します。
+# アウトプットフォーマット
+# {実際のプロジェクト・テーマ名}
+## {具体的な重要ポイント・段階}
+{動画のキャプチャ案とタイムライン HH:MM:SS}
+- 主要な内容・成果
+- 数値データ・実績
+- 今後の課題・提案`,
 
----
+    'educational_content': `あなたは教育コンテンツ作成の専門家です。動画を分析して、学習効果を最大化する教材を作成してください。学習目標を明確にし、理解しやすい順序で構成してください。
 
-# 1. AIによるクリエイティブ生成
+【絶対禁止】以下の表現は使用しないでください：
+- 「マニュアル」
+- 「承知いたしました」 
+- 「作成します」
+- 「分析します」
+- 「教材を作成します」
+- その他、あなたの作業に関する言及
 
-## 1.1. 作成したいクリエイティブのアイデアを入力する
-00:01
+【必須】動画の内容そのものに集中し、実際の学習テーマや内容をタイトルにしてください。
 
--  ツールを起動すると、中央にテキストボックスが表示されます。
--  作成したいクリエイティブの内容を具体的にテキストボックスに入力します。動画では「夏祭りのイベントポスターを作成してください。花火大会、出店、神輿に加えて野外Fesがあります。2025年8月14日開催です。第24回ロック祭というタイトルでお願いします。」と入力しています。    
+重要: 各セクションには必ず動画の該当タイムスタンプ（HH:MM:SS形式）を含めてください。
 
-## 1.2. AIによる生成を開始する
-01:43
+# アウトプットフォーマット
+# {実際の学習テーマ・コース名}
+## {具体的な学習項目・概念}
+{動画のキャプチャ案とタイムライン HH:MM:SS}
+- 核心となる学習内容
+- 具体例・実演内容
+- 理解度チェックポイント`,
 
-- テキストボックスの下にある「AIで生成する」ボタンをクリックします。
-- クリック後、「生成中...」というメッセージが表示され、AIがクリエイティブの生成を開始します。生成には少し時間がかかる場合があります。
-    
+    'event_announcement': `あなたはイベント記録の専門家です。動画を分析して、イベントの魅力と価値を伝える記録を作成してください。参加者の体験や感動、イベントのハイライトを生き生きと表現してください。
 
----
+【絶対禁止】以下の表現は使用しないでください：
+- 「マニュアル」
+- 「承知いたしました」 
+- 「作成します」
+- 「分析します」
+- その他、あなたの作業に関する言及
 
-# 2. 生成されたクリエイティブの編集
+【必須】動画の内容そのものに集中し、イベントの実際の名前や内容をタイトルにしてください。
 
-## 2.1. 編集画面の確認
+重要: 各セクションには必ず動画の該当タイムスタンプ（HH:MM:SS形式）を含めてください。
 
-{動画のキャプチャ案とタイムライン: 01:58}
+# アウトプットフォーマット  
+# {実際のイベント名・催し物名}
+## {具体的な場面・プログラム名}
+{動画のキャプチャ案とタイムライン HH:MM:SS}
+- イベントの様子・雰囲気
+- 参加者の反応・体験
+- 印象的な瞬間・成果`,
 
-- **編集画面の構成:**
-    
-    - **左側:** レイヤーパネルが表示され、背景やテキストなどの各要素を確認・選択できます。
-        
-    - **中央:** 生成されたクリエイティブのプレビューが表示されます。
-        
-    - **右側:** アスペクト比の変更やエクスポートのオプションが表示されます。
+    'business_process': `あなたはビジネスプロセス分析の専門家です。動画を分析して、業務フローや商談プロセスを体系的にまとめてください。効率化や改善点も含めて整理してください。
 
-"""
+【絶対禁止】以下の表現は使用しないでください：
+- 「マニュアル」
+- 「承知いたしました」 
+- 「作成します」
+- 「分析します」
+- その他、あなたの作業に関する言及
 
-**重要な指示:**
-1. **全てのセクション（## で始まる小見出し）には必ずタイムスタンプを含めてください**
-2. **タイムスタンプがない内容は含めないでください**
-3. **実際に動画で確認できる操作のみを記載してください**
-4. **推測や一般的な説明ではなく、動画に基づいた具体的な内容のみを含めてください**
+【必須】動画の内容そのものに集中し、実際の業務名やプロセス名をタイトルにしてください。
 
-この形式で、動画の内容を分析して構造化されたマニュアルを作成してください。`;
+重要: 各セクションには必ず動画の該当タイムスタンプ（HH:MM:SS形式）を含めてください。
+
+# アウトプットフォーマット
+# {実際の業務・プロセス名}
+## {具体的な工程・段階}
+{動画のキャプチャ案とタイムライン HH:MM:SS}
+- 実行内容・手順
+- 関係者・責任者
+- 成果物・次工程への引き継ぎ`,
+
+    'marketing_content': `あなたはマーケティングコンテンツ作成の専門家です。動画を分析して、商品・サービスの魅力を効果的に伝える内容を作成してください。顧客の関心を引く構成を心がけてください。
+
+【絶対禁止】以下の表現は使用しないでください：
+- 「マニュアル」
+- 「承知いたしました」 
+- 「作成します」
+- 「分析します」
+- その他、あなたの作業に関する言及
+
+【必須】動画の内容そのものに集中し、実際の商品名やサービス名をタイトルにしてください。
+
+重要: 各セクションには必ず動画の該当タイムスタンプ（HH:MM:SS形式）を含めてください。
+
+# アウトプットフォーマット
+# {実際の商品・サービス・キャンペーン名}
+## {具体的な特徴・メリット}
+{動画のキャプチャ案とタイムライン HH:MM:SS}
+- 主要な価値提案
+- 使用場面・効果
+- 顧客へのメッセージ`,
+
+    'technical_documentation': `あなたは技術文書作成の専門家です。動画を分析して、技術者向けの詳細なドキュメントを作成してください。実装方法や技術仕様を正確に記録してください。
+
+【絶対禁止】以下の表現は使用しないでください：
+- 「マニュアル」
+- 「承知いたしました」 
+- 「作成します」
+- 「分析します」
+- その他、あなたの作業に関する言及
+
+【必須】動画の内容そのものに集中し、実際の技術名やシステム名をタイトルにしてください。
+
+重要: 各セクションには必ず動画の該当タイムスタンプ（HH:MM:SS形式）を含めてください。
+
+# アウトプットフォーマット
+# {実際の技術・システム名}
+## {具体的な機能・実装項目}
+{動画のキャプチャ案とタイムライン HH:MM:SS}
+- 技術的詳細・仕様
+- 実装手順・設定方法
+- 注意事項・トラブルシューティング`,
+
+    'creative_showcase': `あなたはクリエイティブ作品紹介の専門家です。動画を分析して、創作過程や作品の魅力を表現豊かに紹介してください。創造性やアーティスティックな価値を大切にしてください。
+
+【絶対禁止】以下の表現は使用しないでください：
+- 「マニュアル」
+- 「承知いたしました」 
+- 「作成します」
+- 「分析します」
+- その他、あなたの作業に関する言及
+
+【必須】動画の内容そのものに集中し、実際の作品名やプロジェクト名をタイトルにしてください。
+
+重要: 各セクションには必ず動画の該当タイムスタンプ（HH:MM:SS形式）を含めてください。
+
+# アウトプットフォーマット
+# {実際の作品・プロジェクト名}
+## {具体的な制作段階・表現技法}
+{動画のキャプチャ案とタイムライン HH:MM:SS}
+- 創作意図・コンセプト
+- 技法・手法の特徴
+- 表現効果・作品の価値`
+  };
+
+  return prompts[purpose] || prompts['tutorial_guide'];
+};
 
 /**
  * Convert video file to base64
  */
 export const convertVideoToBase64 = async (videoFile: File): Promise<string> => {
   return new Promise((resolve, reject) => {
+    // Validate input
+    if (!videoFile) {
+      reject(new Error('No video file provided'));
+      return;
+    }
+    
+    if (videoFile.size === 0) {
+      reject(new Error('Video file is empty'));
+      return;
+    }
+    
+    // Note: File size limits are handled by Gemini API itself
+    
+    console.log(`Converting video to base64: ${videoFile.name} (${(videoFile.size / 1024 / 1024).toFixed(2)}MB)`);
+    
     const reader = new FileReader();
+    
     reader.onload = () => {
-      if (reader.result && typeof reader.result === 'string') {
-        // Remove data URL prefix
-        const base64 = reader.result.split(',')[1];
-        resolve(base64);
-      } else {
-        reject(new Error('Failed to convert video to base64'));
+      try {
+        if (reader.result && typeof reader.result === 'string') {
+          // Check if result contains comma (data URL format)
+          if (!reader.result.includes(',')) {
+            reject(new Error('Invalid data URL format from FileReader'));
+            return;
+          }
+          
+          // Remove data URL prefix (data:video/mp4;base64,)
+          const base64 = reader.result.split(',')[1];
+          
+          if (!base64 || base64.length === 0) {
+            reject(new Error('Empty base64 data after conversion'));
+            return;
+          }
+          
+          console.log(`Base64 conversion successful: ${(base64.length / 1024).toFixed(2)}KB`);
+          resolve(base64);
+        } else {
+          reject(new Error(`Failed to convert video to base64: reader.result is ${typeof reader.result}`));
+        }
+      } catch (error) {
+        reject(new Error(`Error processing FileReader result: ${error}`));
       }
     };
-    reader.onerror = () => reject(new Error('Error reading video file'));
-    reader.readAsDataURL(videoFile);
+    
+    reader.onerror = (event) => {
+      console.error('FileReader error:', event);
+      reject(new Error(`Error reading video file: ${reader.error?.message || 'Unknown FileReader error'}`));
+    };
+    
+    reader.onabort = () => {
+      reject(new Error('Video file reading was aborted'));
+    };
+    
+    try {
+      reader.readAsDataURL(videoFile);
+    } catch (error) {
+      reject(new Error(`Failed to start reading video file: ${error}`));
+    }
   });
 };
 
@@ -216,29 +369,114 @@ export const extractFrameFromVideo = (videoFile: File, timestamp: string): Promi
       return;
     }
     
+    // Enhanced video format checking
+    const supportedTypes = ['video/mp4', 'video/webm', 'video/ogg'];
+    const fileExtension = videoFile.name.toLowerCase().split('.').pop();
+    
+    console.log(`Video file info: Name=${videoFile.name}, Type=${videoFile.type}, Size=${videoFile.size} bytes, Extension=${fileExtension}`);
+    
+    // Check if video type is supported by this browser
+    const video_test = document.createElement('video');
+    const canPlayType = video_test.canPlayType(videoFile.type);
+    console.log(`Browser can play ${videoFile.type}: ${canPlayType}`);
+    
+    if (canPlayType === '' && !['mp4', 'webm', 'ogg'].includes(fileExtension || '')) {
+      reject(new Error(`Unsupported video format: ${videoFile.type || 'unknown'}. Supported formats: MP4 (H.264), WebM, OGG. Your file: ${fileExtension}`));
+      return;
+    }
+    
+    let timeoutId: NodeJS.Timeout;
+    
+    const cleanup = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      URL.revokeObjectURL(video.src);
+    };
+    
     video.addEventListener('loadedmetadata', () => {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      
-      const seconds = timestampToSeconds(timestamp);
-      video.currentTime = seconds;
+      try {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        const seconds = timestampToSeconds(timestamp);
+        if (seconds > video.duration) {
+          cleanup();
+          reject(new Error(`Timestamp ${timestamp} exceeds video duration ${video.duration}s`));
+          return;
+        }
+        
+        video.currentTime = seconds;
+      } catch (error) {
+        cleanup();
+        reject(new Error(`Failed to set video currentTime: ${error}`));
+      }
     });
     
     video.addEventListener('seeked', () => {
       try {
         ctx.drawImage(video, 0, 0);
         const dataURL = canvas.toDataURL('image/jpeg', 0.8);
+        cleanup();
         resolve(dataURL);
       } catch (error) {
-        reject(error);
+        cleanup();
+        reject(new Error(`Failed to draw video frame: ${error}`));
       }
     });
     
-    video.addEventListener('error', (e) => {
-      reject(new Error(`Video loading error: ${e}`));
+    video.addEventListener('error', (e: Event) => {
+      cleanup();
+      const target = e.target as HTMLVideoElement;
+      const errorCode = target.error?.code;
+      const errorMessage = target.error?.message;
+      
+      let detailedError = `Video loading error - Code: ${errorCode}, Message: ${errorMessage}, File: ${videoFile.name}, Size: ${videoFile.size} bytes`;
+      
+      // Provide specific solutions based on error code
+      switch (errorCode) {
+        case 1: // MEDIA_ERR_ABORTED
+          detailedError += '\n解決策: 動画読み込みが中断されました。再試行してください。';
+          break;
+        case 2: // MEDIA_ERR_NETWORK  
+          detailedError += '\n解決策: ネットワークエラーです。インターネット接続を確認してください。';
+          break;
+        case 3: // MEDIA_ERR_DECODE
+          detailedError += '\n解決策: 動画ファイルが破損している可能性があります。別のファイルを試すか、動画を再エンコードしてください。';
+          break;
+        case 4: // MEDIA_ERR_SRC_NOT_SUPPORTED
+          detailedError += '\n解決策: この動画形式はサポートされていません。以下の方法を試してください：\n';
+          detailedError += '• HandBrake、FFmpeg等でH.264コーデック + MP4形式に変換\n';
+          detailedError += '• WebM形式(VP8/VP9)に変換\n';
+          detailedError += '• Chrome、Firefox、Edge等のモダンブラウザを使用';
+          break;
+        default:
+          detailedError += '\n解決策: 不明なエラーです。ブラウザを更新するか、別の動画ファイルを試してください。';
+      }
+      
+      reject(new Error(detailedError));
     });
     
-    video.src = URL.createObjectURL(videoFile);
+    video.addEventListener('abort', () => {
+      cleanup();
+      reject(new Error('Video loading aborted'));
+    });
+    
+    // Set timeout for video loading
+    timeoutId = setTimeout(() => {
+      cleanup();
+      reject(new Error('Video loading timeout after 10 seconds'));
+    }, 10000);
+    
+    // Set video properties for better compatibility
+    video.preload = 'metadata';
+    video.muted = true;
+    video.crossOrigin = 'anonymous';
+    
+    try {
+      video.src = URL.createObjectURL(videoFile);
+    } catch (error) {
+      cleanup();
+      reject(new Error(`Failed to create object URL: ${error}`));
+    }
   });
 };
 
@@ -331,9 +569,27 @@ ${slidesWithoutFrames.map((slide, i) => `${i + 1}. ${slide.content.substring(0, 
  */
 export const analyzeVideoWithGemini = async (
   videoFile: File,
+  generationOptions: { scenario?: string },
   userApiKey?: string,
   customPrompt?: string
 ): Promise<string> => {
+  // Start AI interaction history recording
+  const interactionId = aiHistory.startInteraction(
+    'video_analysis',
+    'gemini',
+    'gemini-2.0-flash', // Default video analysis model
+    {
+      prompt: customPrompt || `Analyze video for ${generationOptions.scenario || 'general'} purpose`,
+      context: `Video: ${videoFile.name}, Size: ${(videoFile.size / 1024 / 1024).toFixed(2)}MB`,
+      settings: {
+        scenario: generationOptions.scenario,
+        fileName: videoFile.name,
+        fileSize: videoFile.size,
+        customPrompt
+      }
+    }
+  );
+
   try {
     const ai = getGeminiClient(userApiKey);
     
@@ -342,7 +598,22 @@ export const analyzeVideoWithGemini = async (
     const base64Data = await convertVideoToBase64(videoFile);
     
     // Use custom prompt (from scenario) or default, with mandatory Japanese output  
-    const basePrompt = customPrompt || VIDEO_ANALYSIS_PROMPT;
+    // Map scenario to purpose for prompt selection
+    const scenarioToPurposeMap = {
+      'manual': 'tutorial_guide',
+      'corporate': 'corporate_presentation', 
+      'education': 'educational_content',
+      'event': 'event_announcement',
+      'business': 'business_process',
+      'marketing': 'marketing_content',
+      'technical': 'technical_documentation',
+      'creative': 'creative_showcase'
+    };
+    
+    console.log('Selected scenario:', generationOptions.scenario, '-> Purpose:', scenarioToPurposeMap[generationOptions.scenario as keyof typeof scenarioToPurposeMap]);
+    
+    const purpose = scenarioToPurposeMap[generationOptions.scenario as keyof typeof scenarioToPurposeMap] || 'tutorial_guide';
+    const basePrompt = customPrompt || getVideoAnalysisPrompt(purpose);
     console.log('Using prompt type:', customPrompt ? 'scenario-specific' : 'default');
     console.log('Prompt length:', basePrompt.length);
     const prompt = `あなたは日本語で回答する必要があります。以下の指示に従って、100%日本語で回答してください。
@@ -354,25 +625,30 @@ export const analyzeVideoWithGemini = async (
 ❌ [{"label": ...}] のような配列形式
 
 **必須出力形式：**
-✅ 日本語マニュアル形式のみ
-✅ # 大見出し（例：# イベント概要）
-✅ ## 小見出し（例：## 開会式）
+✅ 日本語による構造化された文書形式のみ
+✅ # 大見出し（例：# メインタイトル）
+✅ ## 小見出し（例：## 場面・段階）
 ✅ タイムスタンプ付き内容（例：00:30）
-✅ 箇条書き説明（例：- 校長先生が挨拶）
+✅ 箇条書き説明（例：- 詳細な説明）
+
+**重要な注意事項：**
+・「マニュアル」「承知いたしました」「作成します」などの表現は絶対に使用しないでください
+・動画の内容そのものに焦点を当て、直接的でわかりやすいタイトルを使用してください
+・あなたの作業について言及せず、動画の内容のみを記述してください
 
 ${basePrompt}
 
-**出力例：**
-# イベント記録マニュアル
-## 1. オープニング
+**正しい出力例：**
+# [動画の実際の内容に基づいたタイトル]
+## [動画で確認できる場面名]
 00:00
-- 学校の外観が映される
-- ナレーションでイベントの説明
+- [実際に映っている内容]
+- [観察できる詳細]
 
-## 2. 主要シーン
-00:30
-- 生徒たちが登場
-- 元気よく挨拶
+## [次の場面名]
+02:30
+- [その場面の内容]
+- [参加者や関係者の様子]
 
 **この形式で必ず出力してください。JSON形式は一切使用禁止です。**`;
     
@@ -438,10 +714,33 @@ ${basePrompt}
       }
     }
     
+    // Record successful completion
+    aiHistory.completeInteraction(
+      interactionId,
+      {
+        content: `Video analysis completed: ${markdown.substring(0, 200)}...`,
+        metadata: {
+          contentType: 'video_analysis',
+          modelUsed: 'gemini-2.0-flash',
+          quality: 1.0,
+          videoSeconds: Math.floor(videoFile.size / 1024 / 1024) // Rough estimate
+        }
+      },
+      calculateEstimatedCost('gemini', 'gemini-2.0-flash', 1000, 2000, 0, Math.floor(videoFile.size / 1024 / 1024))
+    );
+
     return markdown;
     
   } catch (error) {
     console.error('Error analyzing video with Gemini:', error);
+    
+    // Record error
+    aiHistory.recordError(interactionId, {
+      code: 'VIDEO_ANALYSIS_ERROR',
+      message: error instanceof Error ? error.message : 'Unknown video analysis error',
+      details: error
+    });
+    
     throw handleGeminiError(error, 'Video Analysis');
   }
 };
@@ -490,6 +789,40 @@ function convertJsonToManualFormat(jsonOutput: string): string {
 }
 
 /**
+ * Check video file compatibility with browser
+ */
+export const checkVideoCompatibility = (videoFile: File): Promise<{compatible: boolean, details: string}> => {
+  return new Promise((resolve) => {
+    const video = document.createElement('video');
+    const fileExtension = videoFile.name.toLowerCase().split('.').pop();
+    
+    // Basic format check
+    const canPlayType = video.canPlayType(videoFile.type);
+    
+    if (canPlayType === 'probably' || canPlayType === 'maybe') {
+      resolve({
+        compatible: true,
+        details: `✅ Format supported: ${videoFile.type} (${canPlayType})`
+      });
+      return;
+    }
+    
+    // Detailed compatibility check
+    let details = `⚠️ Format: ${videoFile.type || 'unknown'} (Extension: ${fileExtension})\n`;
+    details += `Browser support: ${canPlayType || 'none'}\n\n`;
+    details += `推奨対応方法:\n`;
+    details += `• HandBrakeでH.264 + MP4に変換\n`;
+    details += `• FFmpeg使用: ffmpeg -i input.mp4 -c:v libx264 -c:a aac output.mp4\n`;
+    details += `• WebM形式への変換も可能`;
+    
+    resolve({
+      compatible: canPlayType !== '',
+      details: details
+    });
+  });
+};
+
+/**
  * Generate slides from video analysis
  */
 export const generateSlidesFromVideo = async (
@@ -500,6 +833,7 @@ export const generateSlidesFromVideo = async (
     includeImages: boolean;
     autoSlideCount: boolean;
     slideCount: number;
+    scenario?: string;
   },
   userApiKey?: string,
   customPrompt?: string
@@ -509,9 +843,24 @@ export const generateSlidesFromVideo = async (
     console.log('Video file:', videoFile.name, 'Size:', videoFile.size, 'Type:', videoFile.type);
     console.log('Generation options:', generationOptions);
 
+    // Map scenario to purpose for consistent processing
+    const scenarioToPurposeMap = {
+      'manual': 'tutorial_guide',
+      'corporate': 'corporate_presentation', 
+      'education': 'educational_content',
+      'event': 'event_announcement',
+      'business': 'business_process',
+      'marketing': 'marketing_content',
+      'technical': 'technical_documentation',
+      'creative': 'creative_showcase'
+    };
+    
+    const purpose = scenarioToPurposeMap[generationOptions.scenario as keyof typeof scenarioToPurposeMap] || 'tutorial_guide';
+    console.log('Mapped purpose:', purpose);
+
     // Step 1: Analyze video and generate markdown
     console.log('Step 1: Analyzing video with Gemini...');
-    const markdown = await analyzeVideoWithGemini(videoFile, userApiKey, customPrompt);
+    const markdown = await analyzeVideoWithGemini(videoFile, generationOptions, userApiKey, customPrompt);
     
     if (!markdown || markdown.trim().length === 0) {
       throw new Error('Video analysis returned empty content');
@@ -554,38 +903,41 @@ export const generateSlidesFromVideo = async (
 
       // Add title layer
       const titleLayer: TextLayer = {
-        ...DEFAULT_LAYER_PROPS,
         id: `title-${index + 1}`,
         type: 'text',
-        x: 50,
-        y: 50,
-        width: CANVAS_SIZES[generationOptions.aspectRatio as keyof typeof CANVAS_SIZES].width - 100,
-        height: 80,
+        x: 10,
+        y: 15,
+        width: 80,
+        height: 20,
+        rotation: 0,
+        opacity: 1,
+        zIndex: 1,
         content: title,
-        fontSize: TEXT_STYLES.title.fontSize,
-        fontFamily: TEXT_STYLES.title.fontFamily,
-        fontWeight: TEXT_STYLES.title.fontWeight,
-        textStyleId: 'title',
+        fontSize: DEFAULT_LAYER_PROPS.text.fontSize,
+        fontFamily: 'Inter, sans-serif',
+        fontWeight: 'bold',
+        textStyleId: DEFAULT_LAYER_PROPS.text.textStyleId,
         textColor: THEME_CONFIGS[generationOptions.theme as keyof typeof THEME_CONFIGS]?.textColor || THEME_CONFIGS.professional.textColor,
-        textAlign: 'center',
-        zIndex: 1
+        textAlign: DEFAULT_LAYER_PROPS.text.textAlign
       };
       slide.layers.push(titleLayer);
 
       // Add content layer
       const contentLayer: TextLayer = {
-        ...DEFAULT_LAYER_PROPS,
         id: `content-${index + 1}`,
         type: 'text',
-        x: 50,
-        y: 150,
-        width: CANVAS_SIZES[generationOptions.aspectRatio as keyof typeof CANVAS_SIZES].width - 100,
-        height: CANVAS_SIZES[generationOptions.aspectRatio as keyof typeof CANVAS_SIZES].height - 200,
+        x: 10,
+        y: 40,
+        width: 80,
+        height: 50,
+        rotation: 0,
+        opacity: 1,
+        zIndex: 2,
         content: content,
-        fontSize: TEXT_STYLES.body.fontSize,
-        fontFamily: TEXT_STYLES.body.fontFamily,
-        fontWeight: TEXT_STYLES.body.fontWeight,
-        textStyleId: 'body',
+        fontSize: 16,
+        fontFamily: '"Inter", sans-serif',
+        fontWeight: 400,
+        textStyleId: 'professional-dark',
         textColor: THEME_CONFIGS[generationOptions.theme as keyof typeof THEME_CONFIGS]?.textColor || THEME_CONFIGS.professional.textColor,
         textAlign: 'left',
         zIndex: 2
@@ -599,37 +951,84 @@ export const generateSlidesFromVideo = async (
     console.log('Step 4: Processing frame extraction and image addition...');
     const slidesWithImages = await Promise.all(baseSlides.map(async (slide, index) => {
       if (generationOptions.includeImages && timelineData.length > index) {
+        const timestamp = timelineData[index];
+        console.log(`Processing images for slide ${index + 1} at timestamp ${timestamp}`);
+        
+        // Extract main timeline frame with enhanced error handling
+        let hasMainImage = false;
         try {
-          const timestamp = timelineData[index];
-          console.log(`Extracting frame at ${timestamp} for slide ${index + 1}`);
+          console.log(`Extracting main frame at ${timestamp} for slide ${index + 1}`);
+          const mainFrameData = await extractFrameFromVideo(videoFile, timestamp);
           
-          const frameData = await extractFrameFromVideo(videoFile, timestamp);
-          
-          if (frameData) {
-            const imageLayer: ImageLayer = {
-              ...DEFAULT_LAYER_PROPS,
-              id: `frame-${index + 1}`,
+          if (mainFrameData) {
+            const mainImageLayer: ImageLayer = {
+              id: `main-frame-${index + 1}`,
               type: 'image',
-              x: CANVAS_SIZES[generationOptions.aspectRatio as keyof typeof CANVAS_SIZES].width - 350,
-              y: 150,
-              width: 300,
-              height: 200,
-              src: frameData,
-              prompt: `Frame from video at ${timestamp}`,
-              objectFit: 'cover',
-              zIndex: 3
+              x: 60,
+              y: 30,
+              width: 35,
+              height: 40,
+              rotation: 0,
+              opacity: 1,
+              zIndex: 3,
+              src: mainFrameData,
+              prompt: `Main frame from video at ${timestamp}`,
+              objectFit: DEFAULT_LAYER_PROPS.image.objectFit
             };
             
-            slide.layers.push(imageLayer);
+            slide.layers.push(mainImageLayer);
+            hasMainImage = true;
+            console.log(`✅ Added main frame for slide ${index + 1}`);
             
             // Adjust content layer width to make room for image
             const contentLayer = slide.layers.find(layer => layer.id.startsWith('content-')) as TextLayer;
             if (contentLayer) {
-              contentLayer.width = CANVAS_SIZES[generationOptions.aspectRatio as keyof typeof CANVAS_SIZES].width - 400;
+              contentLayer.width = 50; // Adjust width percentage for text
             }
           }
         } catch (error) {
-          console.warn(`Failed to extract frame for slide ${index + 1}:`, error);
+          console.error(`❌ Failed to extract main frame for slide ${index + 1}:`, error);
+          
+          // Add error information to slide notes for user reference
+          if (!slide.notes) slide.notes = '';
+          slide.notes += `\n⚠️ 画像抽出エラー (${timestamp}): ${error.message}`;
+        }
+        
+        // Extract 2 additional alternative frames (±5 seconds from main timestamp)
+        const alternativeOffsets = [-5, 5]; // seconds before and after main timestamp
+        
+        for (let altIndex = 0; altIndex < alternativeOffsets.length; altIndex++) {
+          try {
+            const offset = alternativeOffsets[altIndex];
+            const baseSeconds = timestampToSeconds(timestamp);
+            const altSeconds = Math.max(0, baseSeconds + offset);
+            const altTimestamp = `${Math.floor(altSeconds / 3600).toString().padStart(2, '0')}:${Math.floor((altSeconds % 3600) / 60).toString().padStart(2, '0')}:${Math.floor(altSeconds % 60).toString().padStart(2, '0')}`;
+            
+            console.log(`Extracting alternative frame ${altIndex + 1} at ${altTimestamp} for slide ${index + 1}`);
+            const altFrameData = await extractFrameFromVideo(videoFile, altTimestamp);
+            
+            if (altFrameData) {
+              const altImageLayer: ImageLayer = {
+                id: `alt-frame-${index + 1}-${altIndex + 1}`,
+                type: 'image',
+                x: 5 + (altIndex * 20), // Position alternatives to the left
+                y: 70,
+                width: 15,
+                height: 20,
+                rotation: 0,
+                opacity: 0.8,
+                zIndex: 2,
+                src: altFrameData,
+                prompt: `Alternative frame ${altIndex + 1} from video at ${altTimestamp}`,
+                objectFit: DEFAULT_LAYER_PROPS.image.objectFit
+              };
+              
+              slide.layers.push(altImageLayer);
+              console.log(`Added alternative frame ${altIndex + 1} for slide ${index + 1}`);
+            }
+          } catch (error) {
+            console.warn(`Failed to extract alternative frame ${altIndex + 1} for slide ${index + 1}:`, error);
+          }
         }
       }
       
@@ -651,7 +1050,7 @@ export const generateSlidesFromVideo = async (
       content: markdown,
       metadata: {
         videoAnalysisResult: markdown,
-        analysisPrompt: customPrompt || VIDEO_ANALYSIS_PROMPT,
+        analysisPrompt: customPrompt || getVideoAnalysisPrompt(purpose),
         videoFileName: videoFile.name,
         generationMethod: 'docs_auto_generate'
       }

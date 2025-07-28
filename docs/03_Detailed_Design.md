@@ -132,3 +132,167 @@ sequenceDiagram
 （変更なし）
 
 ---
+
+## 3.4. レイヤー座標システムとテンプレート設計
+
+### 3.4.1. レイヤー座標システムの実装
+
+SlideMasterでは、レイヤーの配置にパーセンテージベースの座標システムを使用しています。
+
+**座標の定義：**
+- `x`, `y`: 0-100の範囲でキャンバス内の位置を表現（%単位）
+- `width`, `height`: 0-100の範囲でキャンバス内のサイズを表現（%単位）
+- 実際の描画時に`SlideCanvas.tsx`でピクセル値に変換される
+
+**変換処理（SlideCanvas.tsx）：**
+```typescript
+transform: `translate(${(layer.x / 100) * canvasSize.width}px, ${(layer.y / 100) * canvasSize.height}px)`
+```
+
+### 3.4.2. レイヤー作成時の重要な実装ルール
+
+**🚨 重要：`DEFAULT_LAYER_PROPS`の正しい使用方法**
+
+`constants.ts`の`DEFAULT_LAYER_PROPS`は以下の構造になっています：
+
+```typescript
+export const DEFAULT_LAYER_PROPS = {
+  text: {
+    fontSize: 58,
+    textAlign: 'center' as const,
+    textStyleId: 'modern-bold-white',
+    content: 'New Text',
+  },
+  image: {
+    objectFit: 'contain' as const,
+    objectPosition: 'center-center' as const,
+    prompt: 'A beautiful, high-quality image',
+  },
+  shape: {
+    shapeType: 'rectangle' as const,
+    fillColor: '#6366f1',
+    strokeColor: '#4f46e5',
+    strokeWidth: 2,
+  },
+};
+```
+
+**❌ 絶対にやってはいけない間違った使用方法：**
+```typescript
+// 🚨 これは座標を破壊する！
+const baseLayer = {
+  ...DEFAULT_LAYER_PROPS,  // ❌ これにより text, image, shape プロパティが追加される
+  x: template.x,           // ❌ undefinedの場合に座標が失われる
+  y: template.y,
+};
+```
+
+**✅ 正しい使用方法：**
+
+1. **基本レイヤープロパティを明示的に設定：**
+```typescript
+const baseLayer = {
+  id: `${layerType}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+  x: template.x || 10,    // ✅ フォールバック値を設定
+  y: template.y || 10,    // ✅ フォールバック値を設定
+  width: template.width || 80,
+  height: template.height || 20,
+  rotation: 0,
+  opacity: 1,
+  zIndex,
+};
+```
+
+2. **タイプ別デフォルト値を個別に取得：**
+```typescript
+if (layerType === 'text') {
+  return {
+    ...baseLayer,
+    type: 'text',
+    content: content || DEFAULT_LAYER_PROPS.text.content,        // ✅ 個別アクセス
+    fontSize: template.fontSize || DEFAULT_LAYER_PROPS.text.fontSize,
+    textAlign: template.textAlign || DEFAULT_LAYER_PROPS.text.textAlign,
+    textStyleId: DEFAULT_LAYER_PROPS.text.textStyleId,
+  } as TextLayer;
+}
+```
+
+### 3.4.3. レイアウトテンプレートシステム
+
+**テンプレート構造（layoutTemplates.ts）：**
+```typescript
+export const layoutTemplates: Record<string, LayoutTemplate> = {
+  title_and_content: {
+    title: { x: 10, y: 10, width: 80, height: 20, fontSize: 60, textAlign: 'left' },
+    content: { x: 10, y: 35, width: 80, height: 50, fontSize: 36, textAlign: 'left' },
+  },
+  // ... 他のテンプレート
+};
+```
+
+**テンプレート適用の正しいフロー：**
+1. `layoutSelector.ts`で目的に応じてテンプレート名を選択
+2. `layoutTemplates.ts`からテンプレート定義を取得
+3. `layerFactory.ts`でテンプレート座標を使用してレイヤー作成
+
+### 3.4.4. 過去の重大なバグと教訓
+
+**2024年修正済みバグ：Export Service機能削除事件**
+- **問題：** リファクタリング中に既存機能（HTML Export、Marp Export、SVG Export、Project Import）を削除
+- **原因：** 機能の把握不足によるファイル分割時の機能削除
+- **教訓：** リファクタリング時は機能削除ではなく適切な配置を行う
+
+**2025年修正済みバグ：レイヤー座標システム破壊**
+- **問題：** 全レイヤーが座標(0,0)に集まって重なる
+- **原因：** `...DEFAULT_LAYER_PROPS`の不適切な使用により座標システムが破壊
+- **症状：** 
+  - スライドナビゲータでは正常表示
+  - スライド選択時に全レイヤーが左上に重なって表示
+- **根本原因：** 
+  ```typescript
+  // ❌ この書き方が座標を破壊していた
+  const baseLayer = {
+    ...DEFAULT_LAYER_PROPS,  // text, image, shape プロパティが混入
+    x: template.x,           // undefined時に座標が失われる
+  };
+  ```
+- **修正内容：**
+  - `layerFactory.ts`: 座標フォールバック値の追加
+  - `geminiTextService.ts`: 基本レイヤープロパティの明示的設定  
+  - `geminiVideoService.ts`: パーセンテージベース座標の適用
+
+### 3.4.5. マークダウン記法処理システム
+
+**問題：** マークダウン見出し（# ## ###）が処理されずにそのまま表示される
+**解決：** `markdownRenderer.tsx`に見出しレベル処理を追加
+
+```typescript
+// 見出し処理の実装
+else if (line.trim().startsWith('# ')) {
+  // H1: fontSize: 1.6em, fontWeight: bold
+} else if (line.trim().startsWith('## ')) {
+  // H2: fontSize: 1.4em, fontWeight: bold  
+} else if (line.trim().startsWith('### ')) {
+  // H3: fontSize: 1.2em, fontWeight: bold
+}
+```
+
+### 3.4.6. 開発時の必須チェック項目
+
+**レイヤー作成関連のコード修正時には必ず確認：**
+1. ✅ `DEFAULT_LAYER_PROPS`をスプレッド演算子で直接使用していないか
+2. ✅ 座標（x, y, width, height）にフォールバック値が設定されているか
+3. ✅ テンプレート座標が正しく適用されているか
+4. ✅ 作成されたレイヤーが重ならずに配置されているか
+
+**テスト方法：**
+1. スライド生成後、ナビゲータで縮小表示を確認
+2. スライドを選択して実際のキャンバス表示を確認
+3. 複数のレイヤーが重なっていないことを確認
+
+**🎯 金鉄則：機能を削除ではなく適切に配置する**
+- リファクタリング時は既存機能の100%保持が必須
+- ファイル分割時は機能削除ではなく移動として実装
+- 不明な関数・変数は削除前に必ず用途を調査
+
+---

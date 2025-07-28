@@ -44,8 +44,8 @@ const THEME_FONTS: Record<PresentationTheme, {
     bodyWeight: '300'
   },
   playful: {
-    titleFont: '"Nunito", "Comic Sans MS", cursive',
-    bodyFont: '"Nunito", sans-serif',
+    titleFont: 'Nunito, Comic Sans MS, cursive',
+    bodyFont: 'Nunito, sans-serif',
     titleWeight: 'bold',
     bodyWeight: 'normal'
   },
@@ -57,7 +57,7 @@ const THEME_FONTS: Record<PresentationTheme, {
   },
   children_bright: {
     titleFont: '"Fredoka One", "Comic Sans MS", cursive',
-    bodyFont: '"Nunito", sans-serif',
+    bodyFont: 'Nunito, sans-serif',
     titleWeight: 'normal',
     bodyWeight: 'normal'
   },
@@ -186,15 +186,16 @@ export const calculateOptimalFontSize = (
   containerHeight: number,
   maxLines: number = 3
 ): number => {
-  // 基本的な計算: 文字数が多いほど小さく
-  const lengthFactor = Math.max(0.6, Math.min(1.2, 50 / Math.sqrt(textLength)));
+  // 基本的な計算: 文字数が多いほど小さく（より緩やかな調整）
+  const lengthFactor = Math.max(0.7, Math.min(1.2, 60 / Math.sqrt(textLength || 1)));
   
-  // コンテナサイズに基づく調整
-  const sizeFactor = Math.min(containerWidth / 800, containerHeight / 600);
+  // コンテナサイズに基づく調整（より緩やかな調整）
+  const sizeFactor = Math.max(0.8, Math.min(containerWidth / 800, containerHeight / 600));
   
-  // 最小・最大サイズの制限
+  // 最小・最大サイズの制限（タイトル用により適切な最小サイズ）
   const adjustedSize = baseSize * lengthFactor * sizeFactor;
-  return Math.max(16, Math.min(120, adjustedSize));
+  const minSize = baseSize >= 50 ? 32 : 16; // タイトル系は32以上、その他は16以上
+  return Math.max(minSize, Math.min(120, adjustedSize));
 };
 
 /**
