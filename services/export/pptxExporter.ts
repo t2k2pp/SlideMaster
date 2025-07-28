@@ -17,6 +17,232 @@ import {
 // =================================================================
 
 /**
+ * Check if a color is light or dark
+ */
+const isColorLight = (color: string): boolean => {
+  // Remove # if present
+  const hex = color.replace('#', '');
+  
+  // Handle gradient backgrounds - assume they are dark
+  if (hex.includes('gradient') || hex.includes('linear')) {
+    return false;
+  }
+  
+  // Convert hex to RGB
+  const r = parseInt(hex.substr(0, 2), 16);
+  const g = parseInt(hex.substr(2, 2), 16);
+  const b = parseInt(hex.substr(4, 2), 16);
+  
+  // Calculate luminance (YIQ formula)
+  const brightness = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+  
+  // Return true if light (> 128), false if dark
+  return brightness > 128;
+};
+
+/**
+ * Get image dimensions from data URL
+ */
+const getImageDimensions = (dataUrl: string): Promise<{ width: number; height: number }> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      reject(new Error('Failed to load image'));
+    };
+    img.src = dataUrl;
+  });
+};
+
+/**
+ * TEMPORARY WORKAROUND: PptxGenJS cropping/sizing bugs
+ * Create cropped image using Canvas for proper object-fit behavior
+ * TODO: Remove this when PptxGenJS fixes sizing.type='cover' and cropping parameters
+ * 
+ * GitHub Issues: 
+ * - https://github.com/gitbrent/PptxGenJS/issues/313 (sizing options not working)
+ * - https://github.com/gitbrent/PptxGenJS/issues/607 (cover not preserving aspect ratio)
+ */
+const createCroppedImageCanvas = async (
+  imageDataUrl: string,
+  objectFit: string,
+  containerWidth: number,
+  containerHeight: number,
+  naturalWidth: number,
+  naturalHeight: number,
+  objectPosition: string = 'center-center'
+): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Canvas context not available'));
+        return;
+      }
+
+      // Set canvas size to match container dimensions (in pixels)
+      // Convert from inches to pixels for canvas processing
+      const pixelRatio = 96; // 96 DPI standard
+      const canvasWidth = Math.round(containerWidth * pixelRatio);
+      const canvasHeight = Math.round(containerHeight * pixelRatio);
+      
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
+
+      const imageAspect = naturalWidth / naturalHeight;
+      const containerAspect = canvasWidth / canvasHeight;
+
+      let sourceX = 0, sourceY = 0, sourceWidth = naturalWidth, sourceHeight = naturalHeight;
+      let destX = 0, destY = 0, destWidth = canvasWidth, destHeight = canvasHeight;
+
+      switch (objectFit) {
+        case 'cover':
+          // Cover: Fill entire container, crop excess
+          if (imageAspect > containerAspect) {
+            // Image is wider: crop sides based on objectPosition
+            sourceWidth = naturalHeight * containerAspect;
+            const cropAmount = naturalWidth - sourceWidth;
+            
+            // Calculate horizontal position based on objectPosition
+            const [vAlign, hAlign] = objectPosition.split('-');
+            switch (hAlign) {
+              case 'left':
+                sourceX = 0;
+                break;
+              case 'right':
+                sourceX = cropAmount;
+                break;
+              case 'center':
+              default:
+                sourceX = cropAmount / 2;
+                break;
+            }
+          } else {
+            // Image is taller: crop top/bottom based on objectPosition
+            sourceHeight = naturalWidth / containerAspect;
+            const cropAmount = naturalHeight - sourceHeight;
+            
+            // Calculate vertical position based on objectPosition
+            const [vAlign, hAlign] = objectPosition.split('-');
+            switch (vAlign) {
+              case 'top':
+                sourceY = 0;
+                break;
+              case 'bottom':
+                sourceY = cropAmount;
+                break;
+              case 'center':
+              default:
+                sourceY = cropAmount / 2;
+                break;
+            }
+          }
+          break;
+          
+        case 'contain':
+          // Contain: Fit entire image, add padding
+          if (imageAspect > containerAspect) {
+            // Image is wider: fit width, add vertical padding
+            destHeight = canvasWidth / imageAspect;
+            destY = (canvasHeight - destHeight) / 2;
+          } else {
+            // Image is taller: fit height, add horizontal padding
+            destWidth = canvasHeight * imageAspect;
+            destX = (canvasWidth - destWidth) / 2;
+          }
+          break;
+          
+        case 'circle':
+          // Circle: Crop to perfect circle, fill container
+          {
+            const size = Math.min(canvasWidth, canvasHeight);
+            const centerX = canvasWidth / 2;
+            const centerY = canvasHeight / 2;
+            
+            // Create circular clipping path
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, size / 2, 0, 2 * Math.PI);
+            ctx.clip();
+            
+            // Scale image to fill circle
+            destX = centerX - size / 2;
+            destY = centerY - size / 2;
+            destWidth = size;
+            destHeight = size;
+          }
+          break;
+          
+        case 'circle-fit':
+          // Circle-fit: Crop to circle while preserving aspect ratio
+          {
+            const size = Math.min(canvasWidth, canvasHeight);
+            const centerX = canvasWidth / 2;
+            const centerY = canvasHeight / 2;
+            
+            // Create circular clipping path
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, size / 2, 0, 2 * Math.PI);
+            ctx.clip();
+            
+            // Apply contain logic within circle
+            if (imageAspect > 1) {
+              // Image is wider: fit width
+              destWidth = size;
+              destHeight = size / imageAspect;
+              destX = centerX - size / 2;
+              destY = centerY - destHeight / 2;
+            } else {
+              // Image is taller: fit height
+              destHeight = size;
+              destWidth = size * imageAspect;
+              destX = centerX - destWidth / 2;
+              destY = centerY - size / 2;
+            }
+          }
+          break;
+          
+        case 'fill':
+        default:
+          // Fill: Stretch to exact dimensions (default behavior)
+          break;
+      }
+
+      // Clear canvas with transparent background
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+      
+      // Draw the processed image
+      ctx.drawImage(
+        img,
+        sourceX, sourceY, sourceWidth, sourceHeight,
+        destX, destY, destWidth, destHeight
+      );
+
+      // Restore canvas state if clipping was applied
+      if (objectFit === 'circle' || objectFit === 'circle-fit') {
+        ctx.restore();
+      }
+
+      // Convert back to data URL
+      resolve(canvas.toDataURL('image/jpeg', 0.95));
+    };
+    
+    img.onerror = () => {
+      reject(new Error('Failed to load image for canvas processing'));
+    };
+    
+    img.src = imageDataUrl;
+  });
+};
+
+
+
+/**
  * Export presentation as PowerPoint (PPTX)
  */
 export const exportAsPPTX = async (
@@ -90,7 +316,7 @@ export const exportAsPPTX = async (
   }
 };
 
-// Helper function to parse markdown lists for PptxGenJS (from backup implementation)
+// Helper function to parse markdown lists for PptxGenJS (improved implementation)
 const parseMarkdownForPptx = (markdown: string, baseOptions: any) => {
   if (!markdown) return [{ text: '', options: baseOptions }];
 
@@ -99,46 +325,64 @@ const parseMarkdownForPptx = (markdown: string, baseOptions: any) => {
 
   lines.forEach((line, index) => {
     const trimmedLine = line.trim();
+    
     if (trimmedLine.startsWith('- ')) {
+      // Handle bullet points
       const indentLevel = line.match(/^\s*/)?.[0].length || 0;
       const level = Math.floor(indentLevel / 2);
-      // Strip markdown bolding, as pptxgenjs doesn't support it in-line.
       const text = trimmedLine.substring(2).trim().replace(/\*\*(.*?)\*\*/g, '$1');
 
       pptxTextObjects.push({
         text: text,
-        options: { ...baseOptions, bullet: { level: level } },
+        options: { 
+          ...baseOptions, 
+          bullet: { level: level, code: '•' }, // Use bullet character
+          breakLine: index > 0 // Add line break for bullets after first line
+        },
       });
+    } else if (trimmedLine === '') {
+      // Handle empty lines - add line break to next non-empty element
+      if (index < lines.length - 1) {
+        // Mark next non-empty line to have a break
+        for (let j = index + 1; j < lines.length; j++) {
+          if (lines[j].trim()) {
+            // Will be handled by the next iteration
+            break;
+          }
+        }
+      }
     } else if (trimmedLine) {
-      // This is a line of a paragraph.
+      // Handle regular text
       const text = trimmedLine.replace(/\*\*(.*?)\*\*/g, '$1');
-      const prevLine = index > 0 ? lines[index - 1].trim() : null;
-
+      const prevLine = index > 0 ? lines[index - 1].trim() : '';
+      
       pptxTextObjects.push({
         text: text,
         options: {
           ...baseOptions,
           bullet: false,
-          // Start a new paragraph if the previous line was empty.
-          breakLine: prevLine === '',
+          breakLine: index > 0 && (prevLine === '' || pptxTextObjects.length > 0),
         },
       });
     }
-    // Empty lines are handled by checking `prevLine` in the `else if` block.
   });
   
-  // Post-process to fix issues.
-  // The very first element should never have a line break before it.
-  if (pptxTextObjects.length > 0 && pptxTextObjects[0].options.breakLine) {
+  // Post-process to fix formatting issues
+  if (pptxTextObjects.length > 0) {
+    // First element should not have a line break
     pptxTextObjects[0].options.breakLine = false;
-  }
-  
-  // If a non-bullet follows a bullet, it should be a new paragraph.
-  for (let i = 1; i < pptxTextObjects.length; i++) {
-    const currentIsBullet = pptxTextObjects[i].options.bullet !== false;
-    const prevWasBullet = pptxTextObjects[i-1].options.bullet !== false;
-    if (!currentIsBullet && prevWasBullet) {
-      pptxTextObjects[i].options.breakLine = true;
+    
+    // Ensure proper spacing between bullets and regular text
+    for (let i = 1; i < pptxTextObjects.length; i++) {
+      const current = pptxTextObjects[i];
+      const previous = pptxTextObjects[i - 1];
+      
+      const currentIsBullet = current.options.bullet !== false;
+      const prevWasBullet = previous.options.bullet !== false;
+      
+      if (!currentIsBullet && prevWasBullet) {
+        current.options.breakLine = true;
+      }
     }
   }
 
@@ -150,7 +394,7 @@ const parseMarkdownForPptx = (markdown: string, baseOptions: any) => {
 };
 
 /**
- * Export presentation as PowerPoint with structured content (based on backup implementation)
+ * Export presentation as PowerPoint with structured content (restored original functionality)
  */
 export const exportAsPPTXStructured = async (
   presentation: Presentation, 
@@ -168,61 +412,12 @@ export const exportAsPPTXStructured = async (
       const slideData = presentation.slides[i];
       const pptxSlide = pptx.addSlide();
       
-      // Set slide background
-      const backgroundColor = slideData.backgroundColor || '#FFFFFF';
+      // Set slide background - use actual slide background color from the app
+      const backgroundColor = slideData.backgroundColor || presentation.settings?.backgroundColor || '#111827';
       pptxSlide.background = { color: backgroundColor.replace('#', '') };
-      
-      // Determine text colors based on background
-      const isDarkBackground = backgroundColor === '#1A202C' || backgroundColor.toLowerCase().includes('dark');
-      const textColor = isDarkBackground ? 'FFFFFF' : '000000';
-      const subTextColor = isDarkBackground ? 'E2E8F0' : '333333';
-
-      // Find title and content from layers
-      let titleText = '';
-      let contentText = '';
-      const imageLayer = slideData.layers.find(layer => layer.type === 'image') as ImageLayer;
-      
-      // Extract title and content from text layers with better logic
-      slideData.layers.forEach(layer => {
-        if (layer.type === 'text') {
-          const textLayer = layer as TextLayer;
-          const content = textLayer.content || '';
-          
-          // Prioritize by font size and position
-          if (textLayer.fontSize && textLayer.fontSize >= 32) {
-            titleText = content;
-          } else if (textLayer.y && textLayer.y < 30 && !titleText) {
-            titleText = content;
-          } else if (content && titleText !== content) {
-            if (contentText) {
-              contentText += '\n' + content;
-            } else {
-              contentText = content;
-            }
-          } else if (!titleText && content) {
-            titleText = content;
-          }
-        }
-      });
-
-      // Use slide title if no title found in layers
-      if (!titleText) {
-        titleText = `Slide ${i + 1}`;
-      }
-
-      const hasImage = imageLayer?.src && !imageLayer.src.includes('placehold.co');
-
-      // Determine layout based on layer positions
-      const titleLayer = slideData.layers.find(layer => 
-        layer.type === 'text' && (layer as TextLayer).fontSize && (layer as TextLayer).fontSize! >= 32
-      ) as TextLayer;
-      
-      const contentLayer = slideData.layers.find(layer => 
-        layer.type === 'text' && layer !== titleLayer
-      ) as TextLayer;
 
       // Add all layers preserving their exact positions and properties
-      slideData.layers.forEach(layer => {
+      for (const layer of slideData.layers) {
         if (layer.type === 'text') {
           const textLayer = layer as TextLayer;
           if (textLayer.content && textLayer.content.trim()) {
@@ -232,24 +427,54 @@ export const exportAsPPTXStructured = async (
             const w = Math.max(0.5, Math.min(10 - x, (textLayer.width || 20) / 100 * 10));
             const h = Math.max(0.5, Math.min(5.625 - y, (textLayer.height || 10) / 100 * 5.625));
             
-            const fontSize = Math.max(8, Math.min(72, textLayer.fontSize || 16));
-            const parsedContent = parseMarkdownForPptx(textLayer.content, { 
-              color: (textLayer.textColor || '#000000').replace('#', ''), 
-              fontSize: fontSize 
-            });
+            // Scale font size appropriately for PowerPoint (convert from screen pixels to points)
+            // Based on observation: app fontSize 92 → PowerPoint 36, so ratio is ~0.39
+            const baseFontSize = textLayer.fontSize || 16;
+            const fontSize = Math.max(8, Math.min(144, Math.round(baseFontSize * 0.39))); // Convert px to pt
             
-            pptxSlide.addText(parsedContent, {
+            // Determine appropriate text color based on background
+            const slideBackground = slideData.backgroundColor || presentation.settings?.backgroundColor || '#111827';
+            const isLightBackground = isColorLight(slideBackground);
+            const defaultTextColor = isLightBackground ? '#000000' : '#FFFFFF';
+            const textColor = textLayer.textColor || defaultTextColor;
+            
+            // Process markdown content properly for PowerPoint
+            const textOptions = {
               x: x,
               y: y,
               w: w,
               h: h,
               fontSize: fontSize,
-              color: (textLayer.textColor || '#000000').replace('#', ''),
+              fontFace: (textLayer.fontFamily || 'Arial').replace(/["']/g, '').replace(/,.*$/, ''),
+              color: textColor.replace('#', ''),
               align: (textLayer.textAlign || 'left') as 'left' | 'center' | 'right',
               valign: 'top' as 'top',
               bold: textLayer.fontWeight === 'bold',
               italic: textLayer.fontStyle === 'italic',
-            });
+            };
+
+            // Handle markdown content with proper bullet formatting
+            if (textLayer.content.includes('- ') || textLayer.content.includes('\n')) {
+              const parsedContent = parseMarkdownForPptx(textLayer.content, {
+                fontSize: fontSize,
+                fontFace: (textLayer.fontFamily || 'Arial').replace(/["']/g, '').replace(/,.*$/, ''),
+                color: textColor.replace('#', ''),
+                bold: textLayer.fontWeight === 'bold',
+                italic: textLayer.fontStyle === 'italic',
+              });
+              // For complex content, use the array format without second parameter
+              pptxSlide.addText(parsedContent, {
+                x: x,
+                y: y,
+                w: w,
+                h: h,
+                align: (textLayer.textAlign || 'left') as 'left' | 'center' | 'right',
+                valign: 'top' as 'top',
+              });
+            } else {
+              // Simple text without markdown
+              pptxSlide.addText(textLayer.content, textOptions);
+            }
           }
         } else if (layer.type === 'image') {
           const imageLayer = layer as ImageLayer;
@@ -261,30 +486,132 @@ export const exportAsPPTXStructured = async (
             const h = Math.max(1, Math.min(5.625 - y, (imageLayer.height || 30) / 100 * 5.625));
             
             try {
-              pptxSlide.addImage({
-                data: imageLayer.src,
-                x: x,
-                y: y,
-                w: w,
-                h: h,
-                sizing: { type: 'contain', w: w, h: h }
-              });
+              // Apply object fit behavior exactly as specified
+              const objectFit = imageLayer.objectFit || 'contain';
+              
+              // Canvas processing for cover mode and circle modes only (PptxGenJS bugs)
+              if ((objectFit === 'cover' || objectFit === 'circle' || objectFit === 'circle-fit') && imageLayer.naturalWidth && imageLayer.naturalHeight) {
+                try {
+                  // Create cropped image using Canvas
+                  const croppedImageData = await createCroppedImageCanvas(
+                    imageLayer.src,
+                    objectFit,
+                    w,
+                    h,
+                    imageLayer.naturalWidth,
+                    imageLayer.naturalHeight,
+                    imageLayer.objectPosition || 'center-center'
+                  );
+                  
+                  // Add processed image to slide
+                  const processedImageOptions: any = {
+                    data: croppedImageData,
+                    x: x,
+                    y: y,
+                    w: w,
+                    h: h
+                  };
+                  pptxSlide.addImage(processedImageOptions);
+                  
+                  // Add original image outside slide boundaries for editing purposes
+                  // This allows PowerPoint users to access the unprocessed original
+                  // Maintain correct aspect ratio for original image
+                  const imageAspect = imageLayer.naturalWidth / imageLayer.naturalHeight;
+                  const containerAspect = w / h;
+                  
+                  let originalW = w;
+                  let originalH = h;
+                  let originalY = y;
+                  
+                  // Apply contain logic to preserve aspect ratio
+                  if (imageAspect > containerAspect) {
+                    // Image is wider: fit width, adjust height
+                    originalH = w / imageAspect;
+                    originalY = y + (h - originalH) / 2;
+                  } else {
+                    // Image is taller: fit height, adjust width
+                    originalW = h * imageAspect;
+                    // Keep originalY = y for vertical positioning
+                  }
+                  
+                  const originalImageOptions: any = {
+                    data: imageLayer.src,
+                    x: 15, // Outside standard slide width (10-13 inches)
+                    y: originalY,
+                    w: originalW,
+                    h: originalH
+                  };
+                  pptxSlide.addImage(originalImageOptions);
+                } catch (error) {
+                  console.warn('Canvas processing failed, using fallback:', error);
+                  // Fallback to original image
+                  const imageOptions: any = { data: imageLayer.src, x, y, w, h };
+                  pptxSlide.addImage(imageOptions);
+                }
+              } else {
+                // Handle contain and fill cases synchronously
+                console.log('🖼️ Image layer debug:', {
+                  objectFit,
+                  hasNaturalDimensions: !!(imageLayer.naturalWidth && imageLayer.naturalHeight),
+                  naturalWidth: imageLayer.naturalWidth,
+                  naturalHeight: imageLayer.naturalHeight,
+                  src: imageLayer.src ? imageLayer.src.substring(0, 50) + '...' : 'no src',
+                  isPlaceholder: imageLayer.src?.includes('placehold.co'),
+                  isDataUrl: imageLayer.src?.startsWith('data:'),
+                  srcType: imageLayer.src ? (
+                    imageLayer.src.includes('placehold.co') ? 'placeholder' :
+                    imageLayer.src.startsWith('data:') ? 'base64' : 'other'
+                  ) : 'none'
+                });
+                
+                let imageOptions: any = {
+                  data: imageLayer.src,
+                  x: x,
+                  y: y,
+                  w: w,
+                  h: h,
+                };
+                
+                // Handle contain mode with manual size adjustment (PptxGenJS sizing bug workaround)
+                if (objectFit === 'contain' && imageLayer.naturalWidth && imageLayer.naturalHeight) {
+                  const imageAspect = imageLayer.naturalWidth / imageLayer.naturalHeight;
+                  const containerAspect = w / h;
+
+                  if (imageAspect > containerAspect) {
+                    // 画像が横長：幅を基準にして画像を縮小
+                    const adjustedH = w / imageAspect;
+                    const adjustedY = y + (h - adjustedH) / 2;
+                    imageOptions.w = w;
+                    imageOptions.h = adjustedH;
+                    imageOptions.y = adjustedY;
+                  } else {
+                    // 画像が縦長：高さを基準にして画像を縮小
+                    const adjustedW = h * imageAspect;
+                    const adjustedX = x + (w - adjustedW) / 2;
+                    imageOptions.w = adjustedW;
+                    imageOptions.h = h;
+                    imageOptions.x = adjustedX;
+                  }
+                  console.log('📐 Contain mode with manual size adjustment:', {
+                    original: { x, y, w, h },
+                    adjusted: { x: imageOptions.x, y: imageOptions.y, w: imageOptions.w, h: imageOptions.h }
+                  });
+                } else if (objectFit !== 'fill') {
+                  // Other modes should be handled by Canvas processing above
+                  console.log(`⚠️ Object fit '${objectFit}' should be handled by Canvas processing`);
+                }
+                
+                pptxSlide.addImage(imageOptions);
+              }
             } catch (error) {
               console.warn('Error adding image to PPTX:', error);
             }
           }
         }
-      });
-
-      // Add speaker notes if present
-      if (slideData.speakerNotes && slideData.speakerNotes.trim()) {
-        pptxSlide.addNotes(slideData.speakerNotes);
-      } else if (slideData.notes && slideData.notes.trim()) {
-        pptxSlide.addNotes(slideData.notes);
       }
-      
+
       // Add shape layers as geometric objects with exact coordinates
-      slideData.layers.forEach(layer => {
+      for (const layer of slideData.layers) {
         if (layer.type === 'shape') {
           try {
             const shapeLayer = layer as any;
@@ -306,7 +633,14 @@ export const exportAsPPTXStructured = async (
             console.warn('Error adding shape to PPTX:', error);
           }
         }
-      });
+      }
+
+      // Add speaker notes if present
+      if (slideData.speakerNotes && slideData.speakerNotes.trim()) {
+        pptxSlide.addNotes(slideData.speakerNotes);
+      } else if (slideData.notes && slideData.notes.trim()) {
+        pptxSlide.addNotes(slideData.notes);
+      }
     }
 
     const filename = generateFilename(presentation, 'pptx');
@@ -457,9 +791,8 @@ export const exportAsPPTXWithOptions = async (
 
       if (options.structuredContent) {
         // Export as structured content (text and images separately)
-        if (slideData.backgroundColor) {
-          slide.background = { color: slideData.backgroundColor };
-        }
+        const backgroundColor = slideData.backgroundColor || presentation.settings?.backgroundColor || '#111827';
+        slide.background = { color: backgroundColor.replace('#', '') };
 
         // Add each layer as structured content
         for (const layer of slideData.layers) {
@@ -483,14 +816,25 @@ export const exportAsPPTXWithOptions = async (
           if (layer.type === 'text') {
             const textLayer = layer as TextLayer;
             if (textLayer.content && textLayer.content.trim()) {
-              const fontSize = Math.max(8, Math.min(144, textLayer.fontSize || 24));
+              // Scale font size appropriately for PowerPoint (convert from screen pixels to points)
+              // Based on observation: app fontSize 92 → PowerPoint 36, so ratio is ~0.39
+              const baseFontSize = textLayer.fontSize || 24;
+              const fontSize = Math.max(8, Math.min(144, Math.round(baseFontSize * 0.39))); // Convert px to pt
+              
+              // Determine appropriate text color based on background
+              const slideBackground = slideData.backgroundColor || presentation.settings?.backgroundColor || '#111827';
+              const isLightBackground = isColorLight(slideBackground);
+              const defaultTextColor = isLightBackground ? '#000000' : '#FFFFFF';
+              const textColor = textLayer.textColor || defaultTextColor;
+              
               const textOptions = {
                 x: safeX,
                 y: safeY,
                 w: safeW,
                 h: safeH,
                 fontSize: fontSize,
-                color: textLayer.textColor || '#000000',
+                fontFace: (textLayer.fontFamily || 'Arial').replace(/["']/g, '').replace(/,.*$/, ''),
+                color: textColor.replace('#', ''),
                 align: (textLayer.textAlign || 'left') as 'left' | 'center' | 'right',
                 valign: 'top' as 'top',
                 bold: textLayer.fontWeight === 'bold',
@@ -498,7 +842,28 @@ export const exportAsPPTXWithOptions = async (
               };
 
               try {
-                slide.addText(textLayer.content, textOptions);
+                // Handle markdown content with proper bullet formatting
+                if (textLayer.content.includes('- ') || textLayer.content.includes('\n')) {
+                  const parsedContent = parseMarkdownForPptx(textLayer.content, {
+                    fontSize: fontSize,
+                    fontFace: (textLayer.fontFamily || 'Arial').replace(/["']/g, '').replace(/,.*$/, ''),
+                    color: textColor.replace('#', ''),
+                    bold: textLayer.fontWeight === 'bold',
+                    italic: textLayer.fontStyle === 'italic',
+                  });
+                  // For complex content, use the array format
+                  slide.addText(parsedContent, {
+                    x: safeX,
+                    y: safeY,
+                    w: safeW,
+                    h: safeH,
+                    align: (textLayer.textAlign || 'left') as 'left' | 'center' | 'right',
+                    valign: 'top' as 'top',
+                  });
+                } else {
+                  // Simple text without markdown
+                  slide.addText(textLayer.content, textOptions);
+                }
               } catch (error) {
                 console.warn('Error adding text layer:', error, textOptions);
               }
@@ -506,18 +871,145 @@ export const exportAsPPTXWithOptions = async (
           } else if (layer.type === 'image') {
             const imageLayer = layer as ImageLayer;
             if (imageLayer.src && imageLayer.src.startsWith('data:image/')) {
-              const imageOptions = {
-                data: imageLayer.src,
-                x: safeX,
-                y: safeY,
-                w: safeW,
-                h: safeH,
-              };
+              // Apply object fit behavior exactly as specified
+              const objectFit = imageLayer.objectFit || 'contain';
+              
+              // Canvas processing for cover mode and circle modes only (PptxGenJS bugs)
+              if ((objectFit === 'cover' || objectFit === 'circle' || objectFit === 'circle-fit') && imageLayer.naturalWidth && imageLayer.naturalHeight) {
+                try {
+                  // Create cropped image using Canvas
+                  const croppedImageData = await createCroppedImageCanvas(
+                    imageLayer.src,
+                    objectFit,
+                    safeW,
+                    safeH,
+                    imageLayer.naturalWidth,
+                    imageLayer.naturalHeight,
+                    imageLayer.objectPosition || 'center-center'
+                  );
+                  
+                  // Add processed image to slide
+                  const processedImageOptions: any = {
+                    data: croppedImageData,
+                    x: safeX,
+                    y: safeY,
+                    w: safeW,
+                    h: safeH
+                  };
+                  slide.addImage(processedImageOptions);
+                  
+                  // Add original image outside slide boundaries for editing purposes
+                  const imageAspect = imageLayer.naturalWidth / imageLayer.naturalHeight;
+                  const containerAspect = safeW / safeH;
+                  
+                  let originalW = safeW;
+                  let originalH = safeH;
+                  let originalX = pptxWidth + 1; // Outside slide boundaries
+                  let originalY = safeY;
+                  
+                  // Apply contain logic to preserve aspect ratio
+                  if (imageAspect > containerAspect) {
+                    // Image is wider: fit width, adjust height and center vertically
+                    originalH = safeW / imageAspect;
+                    originalY = safeY + (safeH - originalH) / 2;
+                  } else {
+                    // Image is taller: fit height, adjust width and center horizontally
+                    originalW = safeH * imageAspect;
+                    originalX = pptxWidth + 1 + (safeW - originalW) / 2;
+                  }
+                  
+                  const originalImageOptions: any = {
+                    data: imageLayer.src,
+                    x: originalX,
+                    y: originalY,
+                    w: originalW,
+                    h: originalH
+                  };
+                  slide.addImage(originalImageOptions);
+                } catch (error) {
+                  console.warn('Canvas processing failed, using fallback:', error);
+                  const imageOptions: any = { 
+                    data: imageLayer.src, 
+                    x: safeX, 
+                    y: safeY, 
+                    w: safeW, 
+                    h: safeH 
+                  };
+                  slide.addImage(imageOptions);
+                }
+              } else {
+                // Handle contain and fill cases synchronously
+                console.log('🖼️ [WithOptions] Image layer debug:', {
+                  objectFit,
+                  hasNaturalDimensions: !!(imageLayer.naturalWidth && imageLayer.naturalHeight),
+                  naturalWidth: imageLayer.naturalWidth,
+                  naturalHeight: imageLayer.naturalHeight,
+                  src: imageLayer.src ? imageLayer.src.substring(0, 50) + '...' : 'no src'
+                });
+                
+                let imageOptions: any = {
+                  data: imageLayer.src,
+                  x: safeX,
+                  y: safeY,
+                  w: safeW,
+                  h: safeH,
+                };
+                
+                switch (objectFit) {
+                  case 'contain':
+                    // Contain mode: 手動でサイズ調整
+                    if (imageLayer.naturalWidth && imageLayer.naturalHeight) {
+                      const imageAspect = imageLayer.naturalWidth / imageLayer.naturalHeight;
+                      const containerAspect = safeW / safeH;
 
-              try {
-                slide.addImage(imageOptions);
-              } catch (error) {
-                console.warn('Error adding image layer:', error, imageOptions);
+                      if (imageAspect > containerAspect) {
+                        // 画像が横長：幅を基準にして画像を縮小
+                        const adjustedH = safeW / imageAspect;
+                        const adjustedY = safeY + (safeH - adjustedH) / 2;
+                        imageOptions.w = safeW;
+                        imageOptions.h = adjustedH;
+                        imageOptions.y = adjustedY;
+                      } else {
+                        // 画像が縦長：高さを基準にして画像を縮小
+                        const adjustedW = safeH * imageAspect;
+                        const adjustedX = safeX + (safeW - adjustedW) / 2;
+                        imageOptions.w = adjustedW;
+                        imageOptions.h = safeH;
+                        imageOptions.x = adjustedX;
+                      }
+                      console.log('📐 [WithOptions] Contain mode with manual size adjustment:', {
+                        original: { x: safeX, y: safeY, w: safeW, h: safeH },
+                        adjusted: { x: imageOptions.x, y: imageOptions.y, w: imageOptions.w, h: imageOptions.h }
+                      });
+                    } else {
+                      // 寸法データがない場合はsizingを使用
+                      imageOptions.sizing = {
+                        type: 'contain'
+                      };
+                      console.log('📐 [WithOptions] Contain mode with sizing fallback');
+                    }
+                    break;
+                    
+                  case 'fill':
+                    // sizingもcroppingも指定しない = デフォルトの引き延ばし動作
+                    break;
+                    
+                  default:
+                    // デフォルトもcontainと同じ
+                    imageOptions.sizing = {
+                      type: 'contain',
+                      w: w,
+                      h: h
+                    };
+                    console.log('📐 Default mode with PptxGenJS sizing:', imageOptions.sizing);
+                    break;
+                }
+
+                try {
+                  slide.addImage(imageOptions);
+                } catch (error) {
+                  console.warn('Error adding image layer:', error, imageOptions);
+                }
               }
             }
           }

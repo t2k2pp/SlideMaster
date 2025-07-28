@@ -86,6 +86,26 @@ const layerToSVG = (layer: TextLayer | ImageLayer | ShapeLayer, canvasWidth: num
     case 'image':
       // For SVG, embed images as base64 data URLs - ensure URL is properly escaped
       const imageSrc = escapeSVGAttribute(layer.src || '');
+      
+      // Handle Circle effects
+      if (layer.objectFit === 'circle' || layer.objectFit === 'circle-fit') {
+        const clipId = `clip-${layer.id}`;
+        const cx = x + width/2;
+        const cy = y + height/2;
+        const r = Math.min(width, height) / 2;
+        const preserveAspectRatio = layer.objectFit === 'circle-fit' ? 'xMidYMid meet' : 'xMidYMid slice';
+        
+        return `
+          <defs>
+            <clipPath id="${clipId}">
+              <circle cx="${cx}" cy="${cy}" r="${r}" />
+            </clipPath>
+          </defs>
+          <image x="${x}" y="${y}" width="${width}" height="${height}" ${commonAttrs} href="${imageSrc}" preserveAspectRatio="${preserveAspectRatio}" clip-path="url(#${clipId})" />
+        `;
+      }
+      
+      // Handle other objectFit values
       const preserveAspectRatio = layer.objectFit === 'contain' ? 'xMidYMid meet' : layer.objectFit === 'cover' ? 'xMidYMid slice' : 'none';
       return `<image x="${x}" y="${y}" width="${width}" height="${height}" ${commonAttrs} href="${imageSrc}" preserveAspectRatio="${preserveAspectRatio}" />`;
       
@@ -143,7 +163,10 @@ const generateSlideSVG = (slide: Slide, slideIndex?: number): string => {
 /**
  * Export current slide as SVG
  */
-export const exportAsSVG = async (presentation: Presentation): Promise<ExportResult> => {
+export const exportAsSVG = async (
+  presentation: Presentation,
+  currentSlideIndex?: number
+): Promise<ExportResult> => {
   try {
     validatePresentation(presentation);
     
@@ -151,7 +174,8 @@ export const exportAsSVG = async (presentation: Presentation): Promise<ExportRes
       throw new Error('No slides to export');
     }
     
-    const slide = presentation.slides[0]; // Export current slide only
+    const slideIndex = currentSlideIndex ?? 0;
+    const slide = presentation.slides[slideIndex]; // Export current slide only
     const svgContent = generateSlideSVG(slide);
     
     const blob = new Blob([svgContent], { type: 'image/svg+xml' });

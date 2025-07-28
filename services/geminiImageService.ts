@@ -1,5 +1,8 @@
 import { getGeminiClient, getAI, getTemperatureForTask, handleGeminiError } from './geminiApiClient';
 import { resolveAutoImageSettings } from '../utils/imageConsistency';
+import { aiHistory, calculateEstimatedCost } from './aiInteractionHistoryService';
+import { notify } from '../utils/notificationService';
+import { handleImageGenerationError } from '../utils/errorHandler';
 
 // =================================================================
 // Gemini Image Generation Service
@@ -221,6 +224,22 @@ const generateImageWithImagen = async (
 };
 
 /**
+ * Get image dimensions from data URL
+ */
+export const getImageDimensions = (dataUrl: string): Promise<{ width: number; height: number }> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      reject(new Error('Failed to load image for dimension calculation'));
+    };
+    img.src = dataUrl;
+  });
+};
+
+/**
  * Generate image using Gemini AI
  */
 export const generateImage = async (
@@ -236,6 +255,27 @@ export const generateImage = async (
   if (!prompt || prompt.trim() === "") {
     return Promise.resolve(`https://placehold.co/1280x720/1a202c/e2e8f0?text=No+Image+Prompt`);
   }
+
+  // Start AI interaction history recording
+  const interactionId = aiHistory.startInteraction(
+    'image_generation',
+    'gemini',
+    'gemini-2.0-flash', // Default image model
+    {
+      prompt,
+      context: `Purpose: ${purpose}, Slide: ${slideIndex}`,
+      settings: {
+        imageSettings,
+        slideIndex,
+        characterContext,
+        referenceImageContext,
+        seed
+      }
+    }
+  );
+
+  // Show loading notification
+  const loadingToastId = notify.imageGeneration('start', 1, 'Gemini');
 
   // Use default settings if none provided
   const settings = imageSettings || {
@@ -274,18 +314,56 @@ export const generateImage = async (
         config.seed = seed;
       }
       
-      return await generateImageWithImagen(enhancedPrompt, config, userApiKey);
+      const imageResult = await generateImageWithImagen(enhancedPrompt, config, userApiKey);
+      
+      // Dismiss loading notification and show success
+      notify.dismiss(loadingToastId);
+      notify.imageGeneration('success', 1, 'Gemini');
+      
+      // Record successful completion in AI interaction history
+      aiHistory.completeInteraction(
+        interactionId,
+        {
+          content: `Generated image for: ${prompt.substring(0, 100)}...`,
+          metadata: {
+            contentType: 'image',
+            modelUsed: 'gemini-2.0-flash',
+            quality: 1.0
+          },
+          attachments: {
+            images: [imageResult]
+          }
+        },
+        calculateEstimatedCost('gemini', 'gemini-2.0-flash', 0, 0, 1, 0)
+      );
+      
+      return imageResult;
     }
   } catch (error) {
+    // Dismiss loading notification
+    notify.dismiss(loadingToastId);
+    
     // Create a normalized error message for deduplication
     const errorString = error instanceof Error ? error.message : String(error);
     const normalizedError = errorString.replace(/prompt: "[^"]*"/, 'prompt: "[REDACTED]"');
     
-    // Only log if this is a new type of error
+    // Record error in AI interaction history
+    aiHistory.recordError(interactionId, {
+      code: 'IMAGE_GENERATION_ERROR',
+      message: errorString,
+      details: error
+    });
+    
+    // Handle error with improved notification system
+    const retryAction = () => generateImage(prompt, imageSettings, purpose, slideIndex, characterContext, referenceImageContext, userApiKey, seed);
+    handleImageGenerationError(error, 1, 'Gemini', true, retryAction);
+    
+    // Only log if this is a new type of error (keep for debugging)
     if (errorSuppressor.shouldLogError(normalizedError)) {
       console.error(`Error generating image for prompt: "${prompt}"`, error);
       console.warn(`🔇 Image generation error suppression active. ${errorSuppressor.getErrorSummary()}`);
     }
+    
     throw handleGeminiError(error, 'Image Generation');
   }
 };
@@ -305,6 +383,25 @@ export const generateMultipleImages = async (
   }>,
   userApiKey?: string
 ): Promise<string[]> => {
+  // Start AI interaction history recording for batch generation
+  const interactionId = aiHistory.startInteraction(
+    'image_generation',
+    'gemini',
+    'gemini-2.0-flash',
+    {
+      prompt: `Batch image generation (${prompts.length} images)`,
+      context: `Prompts: ${prompts.map(p => p.prompt.substring(0, 50)).join(', ')}...`,
+      settings: {
+        batchSize: prompts.length,
+        prompts: prompts.map(p => ({ 
+          prompt: p.prompt.substring(0, 100), 
+          purpose: p.purpose,
+          slideIndex: p.slideIndex 
+        }))
+      }
+    }
+  );
+
   try {
     const imagePromises = prompts.map((item, index) => 
       generateImage(
@@ -319,8 +416,33 @@ export const generateMultipleImages = async (
       )
     );
     
-    return await Promise.all(imagePromises);
+    const results = await Promise.all(imagePromises);
+    
+    // Record successful completion
+    aiHistory.completeInteraction(
+      interactionId,
+      {
+        content: `Generated ${results.length} images in batch`,
+        metadata: {
+          contentType: 'image_batch',
+          modelUsed: 'gemini-2.0-flash',
+          quality: 1.0
+        },
+        attachments: {
+          images: results
+        }
+      },
+      calculateEstimatedCost('gemini', 'gemini-2.0-flash', 0, 0, results.length, 0)
+    );
+    
+    return results;
   } catch (error) {
+    // Record error
+    aiHistory.recordError(interactionId, {
+      code: 'BATCH_IMAGE_GENERATION_ERROR',
+      message: error instanceof Error ? error.message : 'Unknown batch generation error',
+      details: error
+    });
     throw handleGeminiError(error, 'Multiple Image Generation');
   }
 };

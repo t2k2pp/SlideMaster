@@ -5,7 +5,8 @@ import {
   PresentationPurpose, 
   PageNumberSettings, 
   ImageGenerationSettings, 
-  SpeakerNotesSettings 
+  SpeakerNotesSettings,
+  DesignerType
 } from '../../types';
 import { 
   PRESENTATION_PURPOSES, 
@@ -22,6 +23,66 @@ import {
   AlertCircle,
   Key
 } from 'lucide-react';
+
+// Designer options based on docs
+const DESIGNERS = [
+  {
+    id: 'auto',
+    name: 'Auto（自動選択）',
+    icon: '🤖',
+    description: 'プレゼンテーションの用途に応じて最適なデザイナーを自動選択',
+    philosophy: 'Smart Selection for Optimal Results',
+    characteristics: ['用途別最適化', 'インテリジェント選択', 'バランス重視']
+  },
+  {
+    id: 'amateur',
+    name: 'Amateur Designer',
+    icon: '📝',
+    description: '基本的な4パターンを機械的に繰り返す単調なレイアウト',
+    philosophy: 'Simple and Predictable',
+    characteristics: ['4パターンローテーション', '単調な構成', '予測可能な配置']
+  },
+  {
+    id: 'The Logical Minimalist',
+    name: 'The Logical Minimalist',
+    icon: '⚡',
+    description: 'クリーンで論理的、情報の効率的伝達を重視',
+    philosophy: 'Form Follows Function',
+    characteristics: ['極端なミニマリズム', 'グリッドシステム厳守', 'モノクローム基調']
+  },
+  {
+    id: 'The Emotional Storyteller', 
+    name: 'The Emotional Storyteller',
+    icon: '📚',
+    description: '感情に訴える物語性、画像主導のレイアウト',
+    philosophy: 'Every Slide Tells a Story',
+    characteristics: ['画像主導配置', '物語的展開', '情緒的な色彩']
+  },
+  {
+    id: 'The Academic Visualizer',
+    name: 'The Academic Visualizer', 
+    icon: '🎓',
+    description: '学術的で正確、情報の信頼性を最優先',
+    philosophy: 'Clarity and Accuracy Above All',
+    characteristics: ['情報の構造化', '均等配置', '伝統的フォント']
+  },
+  {
+    id: 'The Vivid Creator',
+    name: 'The Vivid Creator',
+    icon: '🎨', 
+    description: '大胆でインパクトのある、記憶に残るデザイン',
+    philosophy: "Don't Be Boring",
+    characteristics: ['大胆な構図', '鮮やかな色彩', 'トレンド反映']
+  },
+  {
+    id: 'The Corporate Strategist',
+    name: 'The Corporate Strategist',
+    icon: '💼',
+    description: 'ビジネス向け、信頼性と専門性を重視',
+    philosophy: 'Trust and Professionalism',
+    characteristics: ['ブランド準拠', '構造化された清潔感', '目的志向配置']
+  }
+];
 
 // =================================================================
 // AI Generation Form Component - AI-powered slide generation
@@ -81,6 +142,7 @@ export const AIGenerationForm: React.FC<AIGenerationFormProps> = ({
   const [slideCountSpecification, setSlideCountSpecification] = useState<'exact' | 'max' | 'min' | 'around'>('exact');
   const [selectedPurpose, setSelectedPurpose] = useState<PresentationPurpose>('auto');
   const [selectedTheme, setSelectedTheme] = useState<PresentationTheme>('auto');
+  const [selectedDesigner, setSelectedDesigner] = useState<DesignerType>('auto');
   const [includeImages, setIncludeImages] = useState(true);
   const [imageFrequency, setImageFrequency] = useState<'every_slide' | 'every_2_slides' | 'every_3_slides' | 'every_5_slides' | 'sparse'>('every_slide');
   const [imageGenerationSettings, setImageGenerationSettings] = useState<ImageGenerationSettings>(DEFAULT_IMAGE_GENERATION_SETTINGS);
@@ -98,6 +160,7 @@ export const AIGenerationForm: React.FC<AIGenerationFormProps> = ({
       slideCountMode: slideCountMode === 'manual' ? slideCountSpecification : undefined,
       purpose: selectedPurpose,
       theme: selectedTheme,
+      designer: selectedDesigner,
       includeImages,
       aspectRatio: '16:9',
       imageSettings: includeImages ? {
@@ -185,6 +248,92 @@ export const AIGenerationForm: React.FC<AIGenerationFormProps> = ({
 
           {showAdvanced && (
             <div className="mt-4 space-y-4 border-l-2 border-slate-300 dark:border-slate-700 pl-4">
+              {/* デザイナー選択 */}
+              <div>
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-3">
+                  🎨 デザイナー選択（レイアウト戦略）
+                </label>
+                <div className="space-y-3">
+                  {/* Auto option prominently displayed */}
+                  <button
+                    onClick={() => setSelectedDesigner('auto')}
+                    className={`w-full p-4 rounded-lg border-2 transition-colors text-left ${
+                      selectedDesigner === 'auto'
+                        ? 'border-cyan-500 bg-cyan-500/10'
+                        : 'border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600'
+                    }`}
+                    disabled={isProcessing}
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl">🤖</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-sm text-slate-900 dark:text-white mb-1">
+                          Auto（自動選択）⭐ 推奨
+                        </div>
+                        <div className="text-xs text-slate-600 dark:text-slate-400 mb-2">
+                          プレゼンテーションの用途に応じて最適なデザイナーを自動選択
+                        </div>
+                        <div className="text-xs text-cyan-600 dark:text-cyan-400 font-medium mb-2">
+                          "Smart Selection for Optimal Results"
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          <span className="text-xs px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded text-slate-700 dark:text-slate-300">
+                            用途別最適化
+                          </span>
+                          <span className="text-xs px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded text-slate-700 dark:text-slate-300">
+                            インテリジェント選択
+                          </span>
+                          <span className="text-xs px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded text-slate-700 dark:text-slate-300">
+                            バランス重視
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                  
+                  {/* Other designers */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-48 overflow-y-auto border-t pt-3">
+                  {DESIGNERS.filter(designer => designer.id !== 'auto').map(designer => (
+                    <button
+                      key={designer.id}
+                      onClick={() => setSelectedDesigner(designer.id)}
+                      className={`p-4 rounded-lg border-2 transition-colors text-left ${
+                        selectedDesigner === designer.id
+                          ? 'border-cyan-500 bg-cyan-500/10'
+                          : 'border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600'
+                      }`}
+                      disabled={isProcessing}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="text-2xl">{designer.icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm text-slate-900 dark:text-white mb-1">
+                            {designer.name}
+                          </div>
+                          <div className="text-xs text-slate-600 dark:text-slate-400 mb-2">
+                            {designer.description}
+                          </div>
+                          <div className="text-xs text-cyan-600 dark:text-cyan-400 font-medium mb-2">
+                            "{designer.philosophy}"
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {designer.characteristics.map((char, idx) => (
+                              <span key={idx} className="text-xs px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded text-slate-700 dark:text-slate-300">
+                                {char}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                  </div>
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-2 bg-slate-200 dark:bg-slate-800 p-2 rounded">
+                  💡 各デザイナーは異なるレイアウト戦略でスライドを配置します。初心者の方は「Auto」がおすすめです。
+                </div>
+              </div>
+
               {/* 用途選択 */}
               <div>
                 <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">

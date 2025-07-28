@@ -357,11 +357,37 @@ export interface UserSettings {
   gridSize: number;
   shortcuts: Record<string, string>;
   
-  // AI Model Settings
-  aiModels: {
-    textGeneration: 'gemini-2.5-pro' | 'gemini-2.5-flash' | 'gemini-2.5-flash-lite' | 'gemini-2.0-flash' | 'gemini-2.0-flash-lite' | 'gemini-1.5-pro-latest' | 'gemini-1.5-flash-latest' | 'gemma-3-27b-it' | 'gemma-3-12b-it' | 'gemma-3-4b-it' | 'gemma-3n-e4b' | 'gemma-3n-e2b';
-    imageGeneration: 'gemini-2.0-flash-exp' | 'gemini-2.0-flash' | 'imagen-4' | 'imagen-3';
-    videoAnalysis: 'gemini-2.5-pro' | 'gemini-2.5-flash' | 'gemini-1.5-pro-latest' | 'gemini-1.5-flash-latest';
+  // Multi-Provider AI Settings (2025 Update) - Task-based provider selection
+  aiProviderText?: 'gemini' | 'azure' | 'openai' | 'claude' | 'lmstudio';
+  aiProviderImage?: 'gemini' | 'azure' | 'openai' | 'fooocus';
+  aiProviderVideo?: 'gemini' | 'azure' | 'openai' | 'claude' | 'lmstudio';
+  
+  // Legacy single provider (for backward compatibility)
+  aiProvider?: 'gemini' | 'azure' | 'openai' | 'claude' | 'lmstudio' | 'fooocus';
+  
+  // Provider-specific API keys
+  azureApiKey?: string;
+  azureEndpoint?: string;
+  azureDeployments?: {
+    textGeneration?: string;
+    imageGeneration?: string;
+    videoAnalysis?: string;
+  };
+  openaiApiKey?: string;
+  openaiOrganization?: string;
+  claudeApiKey?: string;
+  
+  // Local provider settings
+  lmStudioEndpoint?: string;
+  lmStudioPort?: number;
+  fooucusEndpoint?: string;
+  fooucusPort?: number;
+  
+  // AI Model Settings (更新: 動的文字列に変更)
+  aiModels?: {
+    textGeneration?: string;
+    imageGeneration?: string;
+    videoAnalysis?: string;
   };
   
   // AI temperature設定（カスタマイズ可能）
@@ -400,9 +426,13 @@ const defaultSettings: UserSettings = {
     newSlide: 'Ctrl+N',
     aiAssist: 'Ctrl+K',
   },
+  defaultSlideTheme: 'auto',
+  
+  // Multi-Provider AI Settings (デフォルトはGemini維持)
+  aiProvider: 'gemini',
   aiModels: {
     textGeneration: 'gemini-2.5-flash',
-    imageGeneration: 'imagen-3',
+    imageGeneration: 'gemini-2.0-flash',
     videoAnalysis: 'gemini-2.5-flash',
   },
 };

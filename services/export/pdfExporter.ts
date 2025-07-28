@@ -53,6 +53,9 @@ export const exportAsPDF = async (
           await waitForSlideRender();
         }
 
+        // Get slide background color
+        const slideBackground = slide.background || presentation.settings?.defaultBackground || '#ffffff';
+        
         // Capture the slide as image
         const dataUrl = await htmlToImage.toJpeg(canvasElement, {
           width: canvasWidth,
@@ -60,7 +63,7 @@ export const exportAsPDF = async (
           quality: 0.95,
           pixelRatio: 2,
           skipFonts: true, // Skip external fonts to avoid CORS issues
-          backgroundColor: '#ffffff',
+          backgroundColor: slideBackground,
           style: {
             transform: 'none',
             margin: '0',
@@ -146,6 +149,10 @@ export const exportSlidesAsPDF = async (
           await waitForSlideRender();
         }
 
+        // Get slide background color
+        const slide = presentation.slides[slideIndex];
+        const slideBackground = slide.background || presentation.settings?.defaultBackground || '#ffffff';
+        
         // Capture the slide as image
         const dataUrl = await htmlToImage.toJpeg(canvasElement, {
           width: canvasWidth,
@@ -153,7 +160,7 @@ export const exportSlidesAsPDF = async (
           quality: 0.95,
           pixelRatio: 2,
           skipFonts: true, // Skip external fonts to avoid CORS issues
-          backgroundColor: '#ffffff',
+          backgroundColor: slideBackground,
           style: {
             transform: 'none',
             margin: '0',
@@ -260,6 +267,10 @@ export const exportAsPDFWithOptions = async (
           await waitForSlideRender();
         }
 
+        // Get slide background color
+        const slide = presentation.slides[slideIndex];
+        const slideBackground = slide.background || presentation.settings?.defaultBackground || '#ffffff';
+        
         // Capture the slide as image
         const dataUrl = await htmlToImage.toJpeg(canvasElement, {
           width: canvasWidth,
@@ -267,7 +278,7 @@ export const exportAsPDFWithOptions = async (
           quality: options.quality || 0.95,
           pixelRatio: 2,
           skipFonts: true, // Skip external fonts to avoid CORS issues
-          backgroundColor: '#ffffff',
+          backgroundColor: slideBackground,
           style: {
             transform: 'none',
             margin: '0',

@@ -24,6 +24,8 @@ import { selectLayoutTemplate, calculateImageForSlide, getLayoutTemplate } from 
 import { createLayersFromTemplate } from '../utils/layerFactory';
 import { getGeminiClient, getAI, getTemperatureForTask, handleGeminiError } from './geminiApiClient';
 import { generateImage } from './geminiImageService';
+import { getDesignerLayoutPrompt, selectDesignerForPurpose } from './designerLayoutService';
+import { aiHistory, calculateEstimatedCost } from './aiInteractionHistoryService';
 
 // =================================================================
 // Gemini Text Generation Service
@@ -482,6 +484,29 @@ Return the most suitable theme name.`;
  * Generate a complete presentation
  */
 export const generatePresentation = async (request: SlideGenerationRequest, userApiKey?: string): Promise<Presentation> => {
+  // Start AI interaction history recording
+  const model = getTextGenerationModel();
+  const interactionId = aiHistory.startInteraction(
+    'slide_creation',
+    'gemini',
+    model,
+    {
+      prompt: `Topic: ${request.topic}`,
+      context: `Purpose: ${request.purpose}, Theme: ${request.theme}, Slides: ${request.slideCount}`,
+      settings: {
+        slideCount: request.slideCount,
+        autoSlideCount: request.autoSlideCount,
+        purpose: request.purpose,
+        theme: request.theme,
+        designer: request.designer,
+        aspectRatio: request.aspectRatio,
+        includeImages: request.includeImages,
+        imageFrequency: request.imageFrequency,
+        speakerNotes: request.speakerNotesSettings
+      }
+    }
+  );
+
   try {
     console.log('Starting presentation generation with request:', {
       topic: request.topic,
@@ -498,9 +523,10 @@ export const generatePresentation = async (request: SlideGenerationRequest, user
       console.log(`Auto-determined slide count: ${actualSlideCount}`);
     }
     
-    // Determine actual purpose and theme (handle auto selections)
+    // Determine actual purpose, theme, and designer (handle auto selections)
     let actualPurpose = request.purpose;
     let actualTheme = request.theme;
+    let actualDesigner = request.designer || 'auto';
     
     if (request.purpose === 'auto') {
       actualPurpose = await determineOptimalPurpose(request.topic, userApiKey);
@@ -511,6 +537,12 @@ export const generatePresentation = async (request: SlideGenerationRequest, user
       actualTheme = await determineOptimalTheme(request.topic, actualPurpose, userApiKey);
       console.log(`Auto-determined theme: ${actualTheme}`);
     }
+    
+    // Handle designer auto-selection
+    if (actualDesigner === 'auto') {
+      actualDesigner = selectDesignerForPurpose(actualPurpose);
+      console.log(`Auto-selected designer: ${actualDesigner} for purpose: ${actualPurpose}`);
+    }
 
     // Get theme configuration using actual theme
     const themeConfig = THEME_CONFIGS[actualTheme as keyof typeof THEME_CONFIGS] || THEME_CONFIGS.professional;
@@ -518,6 +550,10 @@ export const generatePresentation = async (request: SlideGenerationRequest, user
     // Build the generation prompt using actual purpose
     const purposePrompt = getPurposePromptTemplate(actualPurpose, request.topic, actualSlideCount, request.includeImages);
     const speakerNotesPrompt = generateSpeakerNotesPrompt(request.speakerNotesSettings);
+    
+    // Get designer-specific layout instructions
+    const designerLayoutPrompt = getDesignerLayoutPrompt(actualDesigner, actualPurpose);
+    console.log(`Using designer: ${actualDesigner} with layout strategy for purpose: ${actualPurpose}`);
 
     // Detect language from topic and prepare language-aware prompt
     const isJapaneseInput = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(request.topic);
@@ -526,6 +562,11 @@ export const generatePresentation = async (request: SlideGenerationRequest, user
     const prompt = purposePrompt + `
 
 THEME: ${actualTheme}
+
+DESIGNER LAYOUT STRATEGY:
+${designerLayoutPrompt}
+
+重要: このデザイナーの哲学と原則に従ってスライドレイアウトを考慮してください。各スライドの配置、強調要素、スペーシングはデザイナーの戦略に基づいて決定してください。
 
 ${isJapaneseInput ? `
 **重要: 日本語で回答してください（画像プロンプトを除く）**
@@ -677,6 +718,19 @@ Structure the content logically and ensure smooth flow between slides.`;
                 userApiKey
               );
               imageLayer.src = imageData;
+              
+              // 画像の寸法を取得して設定
+              try {
+                const { getImageDimensions } = await import('./geminiImageService');
+                const dimensions = await getImageDimensions(imageData);
+                imageLayer.naturalWidth = dimensions.width;
+                imageLayer.naturalHeight = dimensions.height;
+              } catch (dimensionError) {
+                console.warn('Failed to get image dimensions:', dimensionError);
+                // デフォルト値を設定（1280x720 - 16:9比率）
+                imageLayer.naturalWidth = 1280;
+                imageLayer.naturalHeight = 720;
+              }
             } catch (imageError) {
               // Only log first few image generation failures to reduce console spam
               if (index < 2) {
@@ -688,6 +742,9 @@ Structure the content logically and ensure smooth flow between slides.`;
               // Keep image layer even if generation failed (preserves prompt for retry)
               // Set placeholder image instead of removing layer
               imageLayer.src = `https://placehold.co/1280x720/1a202c/e2e8f0?text=Image+Generation+Failed`;
+              // プレースホルダー画像の寸法を設定
+              imageLayer.naturalWidth = 1280;
+              imageLayer.naturalHeight = 720;
             }
           }
         }
@@ -727,6 +784,11 @@ Structure the content logically and ensure smooth flow between slides.`;
         theme: actualTheme,
         originalThemeRequest: request.theme,
         themeAutoSelected: request.theme === 'auto',
+        
+        // Designer information (with auto-selected values)
+        designer: actualDesigner,
+        originalDesignerRequest: request.designer || 'auto',
+        designerAutoSelected: (request.designer || 'auto') === 'auto',
         
         // Image settings
         includeImages: request.includeImages,
@@ -771,8 +833,10 @@ Structure the content logically and ensure smooth flow between slides.`;
         // Selected values (including auto-selected)
         purpose: actualPurpose,
         theme: actualTheme,
+        designer: actualDesigner,
         originalPurposeRequest: request.purpose,
         originalThemeRequest: request.theme,
+        originalDesignerRequest: request.designer || 'auto',
         
         // All generation settings
         includeImages: request.includeImages,
@@ -818,10 +882,33 @@ Structure the content logically and ensure smooth flow between slides.`;
     };
 
     console.log(`Successfully generated presentation with ${finalSlides.length} slides`);
+    
+    // Record successful completion in AI interaction history
+    aiHistory.completeInteraction(
+      interactionId,
+      {
+        content: `Generated presentation "${presentation.title}" with ${finalSlides.length} slides`,
+        metadata: {
+          contentType: 'presentation',
+          modelUsed: model,
+          quality: 1.0 // Could be calculated based on success metrics
+        }
+      },
+      calculateEstimatedCost('gemini', model, 1000, 2000) // Rough estimate
+    );
+    
     return presentation;
 
   } catch (error) {
     console.error('Error generating presentation:', error);
+    
+    // Record error in AI interaction history
+    aiHistory.recordError(interactionId, {
+      code: 'PRESENTATION_GENERATION_ERROR',
+      message: error instanceof Error ? error.message : 'Unknown error during presentation generation',
+      details: error
+    });
+    
     throw handleGeminiError(error, 'Presentation Generation');
   }
 };
@@ -830,6 +917,23 @@ Structure the content logically and ensure smooth flow between slides.`;
  * Generate individual element
  */
 export const generateElement = async (request: ElementGenerationRequest, userApiKey?: string): Promise<Layer> => {
+  // Start AI interaction history recording
+  const model = getTextGenerationModel();
+  const interactionId = aiHistory.startInteraction(
+    request.type === 'text' ? 'text_generation' : 'layout_generation',
+    'gemini',
+    model,
+    {
+      prompt: request.prompt,
+      context: request.slideContext,
+      settings: {
+        type: request.type,
+        position: request.position,
+        size: request.size
+      }
+    }
+  );
+
   try {
     const ai = getGeminiClient(userApiKey);
     
@@ -873,8 +977,10 @@ Provide appropriate content for a ${request.elementType} element.`;
       zIndex: 0,
     };
 
+    let generatedLayer: Layer;
+    
     if (request.elementType === 'text') {
-      return {
+      generatedLayer = {
         ...baseLayer,
         type: 'text',
         content: result.content,
@@ -893,17 +999,41 @@ Provide appropriate content for a ${request.elementType} element.`;
         userApiKey
       );
       
-      return {
+      generatedLayer = {
         ...baseLayer,
         type: 'image',
         src: imageData,
       } as ImageLayer;
+    } else {
+      throw new Error(`Unsupported element type: ${request.elementType}`);
     }
 
-    throw new Error(`Unsupported element type: ${request.elementType}`);
+    // Record successful completion in AI interaction history
+    aiHistory.completeInteraction(
+      interactionId,
+      {
+        content: `Generated ${request.elementType} element: ${result.content.substring(0, 100)}...`,
+        metadata: {
+          contentType: request.elementType,
+          modelUsed: model,
+          quality: 1.0
+        }
+      },
+      calculateEstimatedCost('gemini', model, 200, 300) // Rough estimate for element generation
+    );
+
+    return generatedLayer;
 
   } catch (error) {
     console.error('Error generating element:', error);
+    
+    // Record error in AI interaction history
+    aiHistory.recordError(interactionId, {
+      code: 'ELEMENT_GENERATION_ERROR',
+      message: error instanceof Error ? error.message : 'Unknown error during element generation',
+      details: error
+    });
+    
     throw handleGeminiError(error, 'Element Generation');
   }
 };

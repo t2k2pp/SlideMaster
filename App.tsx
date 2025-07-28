@@ -239,7 +239,7 @@ const App: React.FC = () => {
     title: string, 
     theme: PresentationTheme = 'professional'
   ) => {
-    const themeConfig = THEME_CONFIGS[theme];
+    const themeConfig = THEME_CONFIGS[theme] || THEME_CONFIGS.professional;
     const versionMetadata = createVersionMetadata();
     
     const newPresentation: Presentation = {
@@ -410,7 +410,7 @@ const App: React.FC = () => {
   const addSlide = useCallback((index?: number) => {
     if (!appState.currentPresentation) return;
 
-    const themeConfig = THEME_CONFIGS[appState.currentPresentation.theme];
+    const themeConfig = THEME_CONFIGS[appState.currentPresentation.theme] || THEME_CONFIGS.professional;
     const newSlide: Slide = {
       id: `slide-${Date.now()}`,
       title: 'New Slide',
@@ -468,6 +468,29 @@ const App: React.FC = () => {
       currentSlideIndex: newCurrentIndex,
     }));
   }, [appState.currentPresentation, appState.currentSlideIndex]);
+
+  const duplicateSlide = useCallback((index: number, duplicatedSlide: Slide) => {
+    if (!appState.currentPresentation) return;
+
+    const newSlides = [...appState.currentPresentation.slides];
+    newSlides.splice(index, 0, duplicatedSlide);
+
+    // Update page numbers after adding duplicated slide
+    const slidesWithUpdatedPageNumbers = updateAllPageNumbers(
+      newSlides, 
+      appState.currentPresentation.settings.pageNumbers,
+      appState.currentPresentation.purpose || 'business_presentation'
+    );
+
+    setAppState(prev => ({
+      ...prev,
+      currentPresentation: prev.currentPresentation ? {
+        ...prev.currentPresentation,
+        slides: slidesWithUpdatedPageNumbers,
+      } : null,
+      currentSlideIndex: index,
+    }));
+  }, [appState.currentPresentation]);
 
   const reorderSlides = useCallback((fromIndex: number, toIndex: number) => {
     if (!appState.currentPresentation) return;
@@ -768,7 +791,9 @@ const App: React.FC = () => {
       const result = await exportService.exportPresentation(
         appState.currentPresentation, 
         options,
-        handleSlideChange
+        handleSlideChange,
+        undefined, // onProgress
+        originalSlideIndex // currentSlideIndex
       );
       
       // Restore original state
@@ -1139,7 +1164,7 @@ const App: React.FC = () => {
         onStartSlideShow={() => startSlideShow(appState.currentSlideIndex)}
         onPageNumberManager={() => setShowPageNumberManager(true)}
         onVersionInfo={() => setShowVersionInfo(true)}
-        onApiKeyManager={() => setShowApiKeyManager(true)}
+        onSettings={() => setCurrentScreen('settings')}
         isProcessing={isProcessing}
         hasApiKey={isAIAvailable}
       />
@@ -1154,6 +1179,7 @@ const App: React.FC = () => {
             onSlideAdd={addSlide}
             onSlideDelete={deleteSlide}
             onSlideReorder={reorderSlides}
+            onSlideDuplicate={duplicateSlide}
           />
         )}
 

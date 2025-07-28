@@ -33,6 +33,8 @@ export const createLayerFromTemplate = (
       src: '', // Will be filled by image generation
       prompt: content || DEFAULT_LAYER_PROPS.image.prompt,
       objectFit: DEFAULT_LAYER_PROPS.image.objectFit,
+      naturalWidth: undefined, // Will be set when image is loaded
+      naturalHeight: undefined, // Will be set when image is loaded
     } as ImageLayer;
   } else {
     return {

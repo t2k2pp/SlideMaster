@@ -938,12 +938,16 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
           <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Object Fit</label>
           <select
             value={imageLayer.objectFit}
-            onChange={(e) => onUpdate({ objectFit: e.target.value as 'contain' | 'cover' | 'fill' })}
+            onChange={(e) => onUpdate({ objectFit: e.target.value as any })}
             className="w-full px-2 py-1 bg-slate-200 dark:bg-slate-700 border border-slate-600 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           >
             <option value="contain">Contain (枠内に収まる)</option>
             <option value="cover">Cover (枠を埋める・切り取り)</option>
             <option value="fill">Fill (引き伸ばし)</option>
+            <optgroup label="特殊効果">
+              <option value="circle">Circle: 丸い画像</option>
+              <option value="circle-fit">Circle-fit: 丸い画像(比率保持)</option>
+            </optgroup>
           </select>
           <div className="mt-2 text-xs text-slate-500">
             <div>• Contain: 画像全体が見える（余白あり）</div>

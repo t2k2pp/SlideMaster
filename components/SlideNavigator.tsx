@@ -23,6 +23,7 @@ const SlideNavigator: React.FC<SlideNavigatorProps> = ({
   onSlideAdd,
   onSlideDelete,
   onSlideReorder,
+  onSlideDuplicate,
 }) => {
   const [draggedSlide, setDraggedSlide] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -89,9 +90,12 @@ const SlideNavigator: React.FC<SlideNavigatorProps> = ({
       })),
     };
     
-    // This would need to be implemented in the parent component
-    // For now, we'll just add a new slide
-    onSlideAdd(index + 1);
+    if (onSlideDuplicate) {
+      onSlideDuplicate(index + 1, duplicatedSlide);
+    } else {
+      // Fallback to just adding a new slide
+      onSlideAdd(index + 1);
+    }
   };
 
   // =================================================================
@@ -164,12 +168,21 @@ const SlideNavigator: React.FC<SlideNavigatorProps> = ({
                   </div>
                 )}
                 {layer.type === 'image' && (
-                  <div className="w-full h-full bg-slate-300 dark:bg-slate-600 rounded flex items-center justify-center">
+                  <div className="w-full h-full flex items-center justify-center">
                     {layer.src ? (
                       <img
                         src={layer.src}
                         alt=""
-                        className="w-full h-full object-cover rounded"
+                        className={`w-full h-full ${
+                          layer.objectFit === 'contain' ? 'object-contain' :
+                          layer.objectFit === 'cover' ? 'object-cover' :
+                          layer.objectFit === 'fill' ? 'object-fill' :
+                          layer.objectFit === 'circle' ? 'object-cover' :
+                          layer.objectFit === 'circle-fit' ? 'object-contain' : 'object-contain'
+                        }`}
+                        style={{
+                          borderRadius: layer.objectFit === 'circle' || layer.objectFit === 'circle-fit' ? '50%' : undefined
+                        }}
                         onError={(e) => {
                           (e.target as HTMLImageElement).style.display = 'none';
                         }}

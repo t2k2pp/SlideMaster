@@ -22,7 +22,8 @@ import {
 export const exportAsJPEG = async (
   presentation: Presentation, 
   onSlideChange?: (slideIndex: number) => void,
-  quality: number = 0.95
+  quality: number = 0.95,
+  currentSlideIndex?: number
 ): Promise<ExportResult> => {
   try {
     validatePresentation(presentation);
@@ -30,9 +31,10 @@ export const exportAsJPEG = async (
     const canvasElement = getCanvasElement();
     const { width: canvasWidth, height: canvasHeight } = getCanvasDimensions(presentation);
 
-    // Switch to the first slide to capture
+    // Switch to the current slide to capture (or first slide if not specified)
+    const slideIndex = currentSlideIndex ?? 0;
     if (onSlideChange) {
-      onSlideChange(0);
+      onSlideChange(slideIndex);
       await waitForSlideRender();
     }
 

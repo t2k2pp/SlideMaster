@@ -85,7 +85,8 @@ export const exportPresentation = async (
   presentation: Presentation,
   options: ExportOptions,
   onSlideChange?: (slideIndex: number) => void,
-  onProgress?: (current: number, total: number) => void
+  onProgress?: (current: number, total: number) => void,
+  currentSlideIndex?: number
 ): Promise<ExportResult> => {
   try {
     switch (options.format) {
@@ -96,7 +97,7 @@ export const exportPresentation = async (
           return exportAllAsPNG(presentation, onSlideChange, onProgress);
         } else {
           const { exportAsPNG } = await import('./export/pngExporter');
-          return exportAsPNG(presentation, onSlideChange);
+          return exportAsPNG(presentation, onSlideChange, currentSlideIndex);
         }
 
       case 'jpeg':
@@ -106,7 +107,7 @@ export const exportPresentation = async (
           return exportAllAsJPEG(presentation, onSlideChange, onProgress, options.quality);
         } else {
           const { exportAsJPEG } = await import('./export/jpegExporter');
-          return exportAsJPEG(presentation, onSlideChange, options.quality);
+          return exportAsJPEG(presentation, onSlideChange, options.quality, currentSlideIndex);
         }
 
       case 'pdf':
@@ -144,7 +145,7 @@ export const exportPresentation = async (
           return exportAllAsSVG(presentation, onSlideChange);
         } else {
           const { exportAsSVG } = await import('./export/svgExporter');
-          return exportAsSVG(presentation);
+          return exportAsSVG(presentation, currentSlideIndex);
         }
 
       case 'project':

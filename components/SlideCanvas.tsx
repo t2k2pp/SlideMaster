@@ -37,6 +37,8 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
   const [touchTarget, setTouchTarget] = useState<EventTarget | null>(null);
   const [isLayerTouch, setIsLayerTouch] = useState(false);
   const [isMoveableActive, setIsMoveableActive] = useState(false);
+  const [moveableKey, setMoveableKey] = useState(0);
+  const [touchDragState, setTouchDragState] = useState<{layerId: string, startPos: {x: number, y: number}, initialLayerPos: {x: number, y: number}} | null>(null);
   
   // Shape selection dropdown state
   const [showShapeDropdown, setShowShapeDropdown] = useState(false);
@@ -244,6 +246,7 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
     }
   }, [selectedLayer]);
 
+
   // =================================================================
   // Touch Utility Functions
   // =================================================================
@@ -295,9 +298,18 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
         // Touch started on the currently selected layer - enable layer touch only
         setIsLayerTouch(true);
         setIsPanning(false);
+      } else if (isOnLayer) {
+        // Touch started on unselected layer - prepare for potential selection/drag
+        const layerId = targetElement.closest('.layer')?.getAttribute('data-layer-id');
+        if (layerId) {
+          // Store the potential layer to select, but don't select yet
+          setTouchTarget(targetElement);
+          setIsLayerTouch(true);
+          setIsPanning(false);
+        }
       } else {
-        // Touch started elsewhere (canvas or different layer) - enable panning only
-        // Always deselect current layer when touching elsewhere
+        // Touch started on canvas (not on any layer) - enable panning only
+        // Deselect current layer when touching canvas
         if (selectedLayer) {
           onLayerSelect(null);
         }
@@ -323,8 +335,55 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
     }
     
     if (touches.length === 1) {
-      // Clear logic: either layer touch OR canvas panning, never both
-      if (isLayerTouch && selectedLayer) {
+      // Priority 1: Manual drag in progress
+      if (isLayerTouch && selectedLayer && touchDragState && touchDragState.layerId === selectedLayer.id) {
+        // Manual drag in progress - update layer position
+        const touch = touches[0];
+        const deltaX = touch.clientX - touchDragState.startPos.x;
+        const deltaY = touch.clientY - touchDragState.startPos.y;
+        
+        // Convert screen delta to canvas percentage (account for zoom and viewport offset)
+        const canvasPercentDeltaX = (deltaX / zoom / canvasSize.width) * 100;
+        const canvasPercentDeltaY = (deltaY / zoom / canvasSize.height) * 100;
+        
+        let newX = touchDragState.initialLayerPos.x + canvasPercentDeltaX;
+        let newY = touchDragState.initialLayerPos.y + canvasPercentDeltaY;
+        
+        // Apply grid snapping if enabled
+        if (viewState.snapToGrid) {
+          const baseGridSize = 20;
+          const canvasX = (newX / 100) * canvasSize.width;
+          const canvasY = (newY / 100) * canvasSize.height;
+          const snappedX = Math.round(canvasX / baseGridSize) * baseGridSize;
+          const snappedY = Math.round(canvasY / baseGridSize) * baseGridSize;
+          newX = (snappedX / canvasSize.width) * 100;
+          newY = (snappedY / canvasSize.height) * 100;
+        }
+        
+        onLayerUpdate(selectedLayer.id, { x: newX, y: newY });
+        return;
+      }
+      // Priority 2: Start manual drag for unselected layer
+      else if (isLayerTouch && !selectedLayer && touchTarget) {
+        // Touch started on unselected layer and now moving - select the layer and start manual drag
+        const layerId = (touchTarget as HTMLElement).closest('.layer')?.getAttribute('data-layer-id');
+        const targetLayer = slide.layers.find(l => l.id === layerId);
+        if (layerId && targetLayer) {
+          const touch = touches[0];
+          
+          // Set up manual drag state
+          setTouchDragState({
+            layerId,
+            startPos: { x: touch.clientX, y: touch.clientY },
+            initialLayerPos: { x: targetLayer.x, y: targetLayer.y }
+          });
+          
+          onLayerSelect(layerId);
+        }
+        return;
+      }
+      // Priority 3: Regular Moveable handling for already selected layers
+      else if (isLayerTouch && selectedLayer) {
         // Touch is on selected layer - let Moveable handle it, don't pan canvas
         return;
       } else if (isPanning && !isLayerTouch && !selectedLayer) {
@@ -389,12 +448,39 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
       setTouchStartPoints([]);
       setTouchTarget(null);
       setIsLayerTouch(false);
+      setTouchDragState(null);
       
       // If Moveable was active but DragEnd didn't fire, force reset
       if (isMoveableActive) {
-        setTimeout(() => {
-          setIsMoveableActive(false);
-        }, 50);
+        
+        // Immediately reset state (don't wait for timeout)
+        setIsMoveableActive(false);
+        setIsLayerTouch(false);
+        
+        // If we have a selected layer and were dragging, apply the final position
+        if (selectedLayer && moveableRef.current) {
+          const targetElement = layerRefs.current.get(selectedLayer.id);
+          if (targetElement) {
+            const finalTransform = parseTransform(targetElement.style.transform);
+            let x = finalTransform.x;
+            let y = finalTransform.y;
+            
+            // Apply grid snapping if enabled
+            if (viewState.snapToGrid) {
+              const baseGridSize = 20;
+              x = Math.round(x / baseGridSize) * baseGridSize;
+              y = Math.round(y / baseGridSize) * baseGridSize;
+            }
+            
+            onLayerUpdate(selectedLayer.id, {
+              x: (x / canvasSize.width) * 100,
+              y: (y / canvasSize.height) * 100,
+            });
+          }
+        }
+        
+        // Force Moveable to completely reset by remounting the component
+        setMoveableKey(prev => prev + 1);
       }
     } else if (touches.length === 1 && touchStartPoints.length === 2) {
       // Went from two fingers to one - restart single touch
@@ -476,6 +562,44 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
     onLayerSelect(layerId);
   };
   
+  // Handle layer touch end with Moveable state management
+  const handleLayerTouchEnd = (e: React.TouchEvent, layerId: string) => {
+    e.stopPropagation();
+    
+    // If we were in layer touch mode (dragging), reset state and apply final position
+    if ((isMoveableActive || isLayerTouch) && selectedLayer) {
+      
+      setIsMoveableActive(false);
+      setIsLayerTouch(false);
+      
+      // Apply final position (same logic as handleDragEnd)
+      const targetElement = layerRefs.current.get(selectedLayer.id);
+      if (targetElement) {
+        const finalTransform = parseTransform(targetElement.style.transform);
+        let x = finalTransform.x;
+        let y = finalTransform.y;
+        
+        // Apply grid snapping if enabled
+        if (viewState.snapToGrid) {
+          const baseGridSize = 20;
+          x = Math.round(x / baseGridSize) * baseGridSize;
+          y = Math.round(y / baseGridSize) * baseGridSize;
+        }
+        
+        onLayerUpdate(selectedLayer.id, {
+          x: (x / canvasSize.width) * 100,
+          y: (y / canvasSize.height) * 100,
+        });
+      }
+      
+      // Force Moveable reset
+      setMoveableKey(prev => prev + 1);
+    } else if (!isPanning && touchStartPoints.length <= 1 && !isMoveableActive) {
+      // Only select layer if it was a simple tap, not a drag
+      handleLayerSelect(layerId);
+    }
+  };
+  
   // Touch-specific canvas interaction
   const handleCanvasTouch = (e: React.TouchEvent) => {
     // Only deselect if touch ended on canvas (not on layer)
@@ -538,13 +662,7 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
         className="layer text-layer"
         data-layer-id={layer.id}
         onClick={() => handleLayerSelect(layer.id)}
-        onTouchEnd={(e) => {
-          e.stopPropagation();
-          // Only select layer if it was a simple tap, not a drag
-          if (!isPanning && touchStartPoints.length <= 1 && !isMoveableActive) {
-            handleLayerSelect(layer.id);
-          }
-        }}
+        onTouchEnd={(e) => handleLayerTouchEnd(e, layer.id)}
       >
         <MarkdownRenderer 
           content={layer.content}
@@ -601,13 +719,7 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
         className="layer image-layer"
         data-layer-id={layer.id}
         onClick={() => handleLayerSelect(layer.id)}
-        onTouchEnd={(e) => {
-          e.stopPropagation();
-          // Only select layer if it was a simple tap, not a drag
-          if (!isPanning && touchStartPoints.length <= 1 && !isMoveableActive) {
-            handleLayerSelect(layer.id);
-          }
-        }}
+        onTouchEnd={(e) => handleLayerTouchEnd(e, layer.id)}
       >
         {layer.src ? (
           <img
@@ -616,9 +728,10 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
             style={{
               width: '100%',
               height: '100%',
-              objectFit: layer.objectFit,
+              objectFit: layer.objectFit === 'circle' || layer.objectFit === 'circle-fit' ? 
+                (layer.objectFit === 'circle-fit' ? 'contain' : 'cover') : layer.objectFit,
               objectPosition: getObjectPositionCSS(layer.objectPosition),
-              borderRadius: '4px',
+              borderRadius: layer.objectFit === 'circle' || layer.objectFit === 'circle-fit' ? '50%' : '4px',
               display: 'block',
             }}
             draggable={false}
@@ -700,13 +813,7 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
         className="layer shape-layer"
         data-layer-id={layer.id}
         onClick={() => handleLayerSelect(layer.id)}
-        onTouchEnd={(e) => {
-          e.stopPropagation();
-          // Only select layer if it was a simple tap, not a drag
-          if (!isPanning && touchStartPoints.length <= 1 && !isMoveableActive) {
-            handleLayerSelect(layer.id);
-          }
-        }}
+        onTouchEnd={(e) => handleLayerTouchEnd(e, layer.id)}
       >
         {shapeContent}
       </div>
@@ -1045,6 +1152,7 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
             {/* Moveable for selected layer */}
             {selectedLayerRef && (
               <Moveable
+                key={moveableKey}
                 ref={moveableRef}
                 target={selectedLayerRef}
                 zoom={zoom}
@@ -1068,23 +1176,14 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
                 // Live updates for smooth interaction
                 onDrag={e => { 
                   e.target.style.transform = e.transform; 
-                  // Ensure touch states remain consistent during drag
-                  setIsMoveableActive(true);
-                  setIsLayerTouch(true);
                 }}
                 onResize={e => { 
                   e.target.style.width = `${e.width}px`;
                   e.target.style.height = `${e.height}px`;
                   e.target.style.transform = e.drag.transform;
-                  // Ensure touch states remain consistent during resize
-                  setIsMoveableActive(true);
-                  setIsLayerTouch(true);
                 }}
                 onRotate={e => { 
                   e.target.style.transform = e.drag.transform; 
-                  // Ensure touch states remain consistent during rotate
-                  setIsMoveableActive(true);
-                  setIsLayerTouch(true);
                 }}
               />
             )}
