@@ -110,8 +110,10 @@ export interface ImageLayer extends BaseLayer {
   src: string; // base64 or URL
   prompt: string; // AI generation prompt
   seed?: number; // Random seed for reproducible image generation
-  objectFit: 'contain' | 'cover' | 'fill';
+  objectFit: 'contain' | 'cover' | 'fill' | 'circle' | 'circle-fit';
   objectPosition?: 'top-left' | 'top-center' | 'top-right' | 'center-left' | 'center-center' | 'center-right' | 'bottom-left' | 'bottom-center' | 'bottom-right';
+  naturalWidth?: number; // 元画像の幅（ピクセル）
+  naturalHeight?: number; // 元画像の高さ（ピクセル）
 }
 
 export interface ShapeLayer extends BaseLayer {
@@ -178,6 +180,98 @@ export interface GenerationHistoryItem {
   parameters: any;
 }
 
+// =================================================================
+// AI Interaction History System
+// =================================================================
+
+export type AIInteractionType = 
+  | 'text_generation'      // テキスト生成
+  | 'image_generation'     // 画像生成  
+  | 'video_analysis'       // 動画分析
+  | 'layout_generation'    // レイアウト生成
+  | 'content_optimization' // コンテンツ最適化
+  | 'slide_creation'       // スライド作成
+  | 'translation'          // 翻訳
+  | 'summary'              // 要約
+  | 'enhancement'          // 改善提案
+  | 'custom';              // カスタム処理
+
+export type AIInteractionStatus = 'pending' | 'success' | 'error' | 'cancelled';
+
+export interface AIInteractionInput {
+  prompt: string;           // ユーザーのプロンプト
+  context?: string;         // 追加コンテキスト
+  files?: string[];         // 関連ファイル名
+  settings?: any;           // 生成設定
+  parameters?: any;         // AIパラメータ
+}
+
+export interface AIInteractionOutput {
+  content: string;          // AI生成コンテンツ
+  metadata?: {              // メタデータ
+    tokenCount?: number;    // トークン数
+    modelUsed?: string;     // 使用モデル
+    processingTime?: number;// 処理時間（ms）
+    contentType?: string;   // コンテンツタイプ
+    quality?: number;       // 品質スコア（0-1）
+  };
+  attachments?: {           // 添付ファイル
+    images?: string[];      // 画像ファイルパス
+    videos?: string[];      // 動画ファイルパス
+    documents?: string[];   // ドキュメントファイルパス
+  };
+}
+
+export interface AIInteractionCost {
+  provider: string;         // プロバイダー名
+  model: string;            // モデル名
+  inputTokens?: number;     // 入力トークン数
+  outputTokens?: number;    // 出力トークン数
+  imageCount?: number;      // 画像枚数
+  videoSeconds?: number;    // 動画秒数
+  estimatedCost: number;    // 推定コスト（USD）
+  currency: 'USD' | 'JPY';  // 通貨
+}
+
+export interface AIInteractionHistoryItem {
+  id: string;               // ユニークID
+  type: AIInteractionType;  // インタラクションタイプ
+  status: AIInteractionStatus; // ステータス
+  timestamp: Date;          // 実行日時
+  
+  // プロバイダー情報
+  provider: string;         // AIプロバイダー（gemini, azure, openai, etc）
+  model: string;            // 使用モデル
+  
+  // 入出力データ
+  input: AIInteractionInput;
+  output?: AIInteractionOutput; // 成功時のみ
+  
+  // エラー情報
+  error?: {
+    code: string;
+    message: string;
+    details?: any;
+  };
+  
+  // コスト情報
+  cost?: AIInteractionCost;
+  
+  // 関連情報
+  slideId?: string;         // 関連スライドID
+  layerId?: string;         // 関連レイヤーID
+  sessionId?: string;       // セッションID（関連する操作をグループ化）
+  parentId?: string;        // 親インタラクションID（チェーン処理用）
+  
+  // ユーザー評価
+  userRating?: number;      // ユーザー評価（1-5）
+  userFeedback?: string;    // ユーザーフィードバック
+  
+  // システム情報
+  appVersion: string;       // アプリバージョン
+  userAgent?: string;       // ユーザーエージェント
+}
+
 export interface Presentation extends VersionedFile {
   id: string;
   title: string;
@@ -190,6 +284,9 @@ export interface Presentation extends VersionedFile {
   updatedAt: Date;
   sources?: SlideSource[];
   generationHistory?: GenerationHistoryItem[];
+  
+  // AI対話履歴（新規追加）
+  aiInteractionHistory?: AIInteractionHistoryItem[];
 }
 
 export interface PresentationSettings {
@@ -243,6 +340,15 @@ export interface PageNumberSettings {
   customPrefix?: string; // e.g., "Page ", "ページ ", "P."
 }
 
+export type DesignerType = 
+  | 'auto'
+  | 'amateur'
+  | 'The Logical Minimalist'
+  | 'The Emotional Storyteller'
+  | 'The Academic Visualizer'
+  | 'The Vivid Creator'
+  | 'The Corporate Strategist';
+
 export interface SlideGenerationRequest {
   topic: string;
   slideCount: number;
@@ -250,6 +356,7 @@ export interface SlideGenerationRequest {
   slideCountMode?: 'exact' | 'max' | 'min' | 'around'; // 指定ページ、指定ページ以内、指定ページ以上、指定ページ前後
   theme: PresentationTheme;
   purpose: PresentationPurpose;
+  designer?: DesignerType; // Layout strategy designer
   aspectRatio: '16:9' | '4:3' | '1:1' | '9:16' | '3:4';
   includeImages: boolean;
   imageFrequency?: 'every_slide' | 'every_2_slides' | 'every_3_slides' | 'every_5_slides' | 'sparse';
@@ -430,6 +537,7 @@ export interface SlideNavigatorProps {
   onSlideAdd: (index: number) => void;
   onSlideDelete: (index: number) => void;
   onSlideReorder: (fromIndex: number, toIndex: number) => void;
+  onSlideDuplicate?: (index: number, duplicatedSlide: Slide) => void;
 }
 
 export interface AIAssistantProps {

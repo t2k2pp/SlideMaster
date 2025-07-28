@@ -12,13 +12,12 @@ interface ApiKeyManagerProps {
 export default function ApiKeyManager({ isOpen, onClose, onApiKeyUpdate, currentApiKey, hasDefaultKey }: ApiKeyManagerProps) {
   const [apiKey, setApiKey] = useState(currentApiKey || '');
   const [showApiKey, setShowApiKey] = useState(false);
-  const [isValid, setIsValid] = useState(false);
+  const [isValid, setIsValid] = useState((currentApiKey || '').trim().length > 0);
   const [selectedHint, setSelectedHint] = useState<'help' | 'default' | 'fallback' | null>(null);
 
   const validateApiKey = (key: string) => {
-    // Gemini API キーの基本的な形式チェック
-    const geminiKeyPattern = /^AIza[0-9A-Za-z_-]{35}$/;
-    return geminiKeyPattern.test(key);
+    // 値が設定されているかのチェックのみ
+    return key.trim().length > 0;
   };
 
   const handleApiKeyChange = (value: string) => {

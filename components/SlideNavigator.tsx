@@ -23,6 +23,7 @@ const SlideNavigator: React.FC<SlideNavigatorProps> = ({
   onSlideAdd,
   onSlideDelete,
   onSlideReorder,
+  onSlideDuplicate,
 }) => {
   const [draggedSlide, setDraggedSlide] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -89,9 +90,12 @@ const SlideNavigator: React.FC<SlideNavigatorProps> = ({
       })),
     };
     
-    // This would need to be implemented in the parent component
-    // For now, we'll just add a new slide
-    onSlideAdd(index + 1);
+    if (onSlideDuplicate) {
+      onSlideDuplicate(index + 1, duplicatedSlide);
+    } else {
+      // Fallback to just adding a new slide
+      onSlideAdd(index + 1);
+    }
   };
 
   // =================================================================
@@ -103,7 +107,9 @@ const SlideNavigator: React.FC<SlideNavigatorProps> = ({
     index,
     isActive,
   }) => {
-    const canvasSize = CANVAS_SIZES[slide.aspectRatio];
+    // 安全なアスペクト比の取得
+    const aspectRatioKey = slide.aspectRatio || '16:9';
+    const canvasSize = CANVAS_SIZES[aspectRatioKey] || CANVAS_SIZES['16:9'];
     const aspectRatio = canvasSize.width / canvasSize.height;
     const previewWidth = 200;
     const previewHeight = previewWidth / aspectRatio;
@@ -130,47 +136,59 @@ const SlideNavigator: React.FC<SlideNavigatorProps> = ({
       >
         {/* Slide Content Preview */}
         <div className="absolute inset-0 p-2">
-          {slide.layers
-            .sort((a: any, b: any) => a.zIndex - b.zIndex)
+          {slide.layers && Array.isArray(slide.layers) ? slide.layers
+            .sort((a: any, b: any) => (a.zIndex || 0) - (b.zIndex || 0))
             .map((layer: any) => (
               <div
                 key={layer.id}
                 className="absolute pointer-events-none"
                 style={{
-                  left: `${layer.x}%`,
-                  top: `${layer.y}%`,
-                  width: `${layer.width}%`,
-                  height: `${layer.height}%`,
-                  transform: `rotate(${layer.rotation}deg)`,
-                  opacity: layer.opacity,
-                  zIndex: layer.zIndex,
+                  left: `${layer.x || 0}%`,
+                  top: `${layer.y || 0}%`,
+                  width: `${layer.width || 100}%`,
+                  height: `${layer.height || 100}%`,
+                  transform: `rotate(${layer.rotation || 0}deg)`,
+                  opacity: layer.opacity !== undefined ? layer.opacity : 1,
+                  zIndex: layer.zIndex || 0,
                 }}
               >
-                {layer.type === 'text' && (
+                {layer.type === 'text' && layer.content && (
                   <div
-                    className="text-xs text-white overflow-hidden"
+                    className="overflow-hidden"
                     style={{
-                      fontSize: `${Math.max(6, layer.fontSize * 0.05)}px`,
-                      textAlign: layer.textAlign,
+                      fontSize: `${Math.max(8, (layer.fontSize || 24) * 0.15)}px`,
+                      textAlign: layer.textAlign || 'left',
                       color: layer.textColor || '#ffffff',
-                      lineHeight: '1.2',
+                      lineHeight: '1.3',
                       wordBreak: 'break-word',
                     }}
                   >
-                    {layer.content.split('\n').slice(0, 3).join('\n')}
-                    {layer.content.split('\n').length > 3 && '...'}
+                    {String(layer.content).split('\n').slice(0, 3).join('\n')}
+                    {String(layer.content).split('\n').length > 3 && '...'}
                   </div>
                 )}
                 {layer.type === 'image' && (
-                  <div className="w-full h-full bg-slate-300 dark:bg-slate-600 rounded flex items-center justify-center">
+                  <div className="w-full h-full flex items-center justify-center">
                     {layer.src ? (
                       <img
                         src={layer.src}
                         alt=""
-                        className="w-full h-full object-cover rounded"
+                        className={`w-full h-full ${
+                          layer.objectFit === 'contain' ? 'object-contain' :
+                          layer.objectFit === 'cover' ? 'object-cover' :
+                          layer.objectFit === 'fill' ? 'object-fill' :
+                          layer.objectFit === 'circle' ? 'object-cover' :
+                          layer.objectFit === 'circle-fit' ? 'object-contain' : 'object-contain'
+                        }`}
+                        style={{
+                          borderRadius: layer.objectFit === 'circle' || layer.objectFit === 'circle-fit' ? '50%' : undefined
+                        }}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
                       />
                     ) : (
-                      <div className="w-2 h-2 bg-slate-500 dark:bg-slate-400 rounded"></div>
+                      <div className="w-3 h-3 bg-slate-500 dark:bg-slate-400 rounded"></div>
                     )}
                   </div>
                 )}
@@ -178,13 +196,18 @@ const SlideNavigator: React.FC<SlideNavigatorProps> = ({
                   <div
                     className="w-full h-full"
                     style={{
-                      backgroundColor: layer.fillColor,
+                      backgroundColor: layer.fillColor || '#cccccc',
                       borderRadius: layer.shapeType === 'circle' ? '50%' : '0',
                     }}
                   ></div>
                 )}
               </div>
-            ))}
+            )) : (
+              // レイヤーが存在しない場合の表示
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="text-xs text-slate-500 dark:text-slate-400">No content</div>
+              </div>
+            )}
         </div>
 
         {/* Slide Number */}

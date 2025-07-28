@@ -75,7 +75,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
     <div className="h-screen w-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-900 dark:text-white flex flex-col">
       {/* Header */}
       <div className="text-center py-8 px-4 relative">
-        {/* Settings buttons in top-right corner */}
+        {/* Settings button in top-right corner */}
         <div className="absolute top-4 right-8 flex gap-3">
           <button
             onClick={() => {
@@ -83,24 +83,10 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
               onOpenSettings();
             }}
             className="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors bg-slate-600 dark:bg-gray-600/20 text-white dark:text-gray-400 hover:bg-slate-700 dark:hover:bg-gray-600/30"
-            title="設定"
+            title="設定（APIキー設定を含む）"
           >
             <Settings className="w-4 h-4" />
             <span className="text-sm font-medium text-white dark:text-white">設定</span>
-          </button>
-          <button
-            onClick={() => onApiKeySetup?.()}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-              hasApiKey 
-                ? 'bg-green-600 dark:bg-green-600/20 text-white dark:text-green-400 hover:bg-green-700 dark:hover:bg-green-600/30' 
-                : 'bg-orange-600 dark:bg-orange-600/20 text-white dark:text-orange-400 hover:bg-orange-700 dark:hover:bg-orange-600/30'
-            }`}
-            title={hasApiKey ? 'APIキー設定済み' : 'APIキーを設定してください'}
-          >
-            <Key className="w-4 h-4" />
-            <span className="text-sm font-medium">
-              {hasApiKey ? 'API設定済み' : 'API設定'}
-            </span>
           </button>
         </div>
 

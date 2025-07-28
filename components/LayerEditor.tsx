@@ -255,11 +255,11 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium text-slate-900 dark:text-white truncate">
                           {slideLayer.type === 'text' ? 
-                            ((slideLayer as TextLayer).content || '').substring(0, 20) + 
-                            (((slideLayer as TextLayer).content || '').length > 20 ? '...' : '') :
+            (slideLayer as TextLayer).content.substring(0, 20) + 
+                            ((slideLayer as TextLayer).content.length > 20 ? '...' : '') :
                             slideLayer.type === 'image' ? 
-                              ((slideLayer as ImageLayer).prompt || 'Image').substring(0, 20) + 
-                              (((slideLayer as ImageLayer).prompt || '').length > 20 ? '...' : '') :
+(slideLayer as ImageLayer).prompt.substring(0, 20) + 
+                              ((slideLayer as ImageLayer).prompt.length > 20 ? '...' : '') :
                             `${slideLayer.type} layer`
                           }
                         </div>
@@ -565,8 +565,8 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
           <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Width (%)</label>
           <input
             type="number"
-            value={Math.round(layer.width || 100)}
-            onChange={(e) => onUpdate({ width: parseFloat(e.target.value) || 100 })}
+            value={Math.round(layer.width || 0)}
+            onChange={(e) => onUpdate({ width: parseFloat(e.target.value) || 0 })}
             className="w-full px-2 py-1 bg-slate-200 dark:bg-slate-700 border border-slate-600 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             min="1"
             max="100"
@@ -576,8 +576,8 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
           <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Height (%)</label>
           <input
             type="number"
-            value={Math.round(layer.height || 100)}
-            onChange={(e) => onUpdate({ height: parseFloat(e.target.value) || 100 })}
+            value={Math.round(layer.height || 0)}
+            onChange={(e) => onUpdate({ height: parseFloat(e.target.value) || 0 })}
             className="w-full px-2 py-1 bg-slate-200 dark:bg-slate-700 border border-slate-600 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             min="1"
             max="100"
@@ -665,10 +665,8 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
             value={textLayer.content}
             onChange={(e) => onUpdate({ content: e.target.value })}
             onKeyDown={(e) => {
-              // Ensure space key works properly
-              if (e.key === ' ') {
-                e.stopPropagation();
-              }
+              // テキスト入力中のキーイベントは通常通り動作させる
+              e.stopPropagation();
             }}
             className="w-full px-2 py-1 bg-slate-200 dark:bg-slate-700 border border-slate-600 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
             rows={4}
@@ -854,10 +852,8 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
             value={imageLayer.prompt}
             onChange={(e) => onUpdate({ prompt: e.target.value })}
             onKeyDown={(e) => {
-              // Ensure space key works properly
-              if (e.key === ' ') {
-                e.stopPropagation();
-              }
+              // テキスト入力中のキーイベントは通常通り動作させる
+              e.stopPropagation();
             }}
             className="w-full px-2 py-1 bg-slate-200 dark:bg-slate-700 border border-slate-600 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
             rows={3}
@@ -942,12 +938,16 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
           <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Object Fit</label>
           <select
             value={imageLayer.objectFit}
-            onChange={(e) => onUpdate({ objectFit: e.target.value as 'contain' | 'cover' | 'fill' })}
+            onChange={(e) => onUpdate({ objectFit: e.target.value as any })}
             className="w-full px-2 py-1 bg-slate-200 dark:bg-slate-700 border border-slate-600 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           >
             <option value="contain">Contain (枠内に収まる)</option>
             <option value="cover">Cover (枠を埋める・切り取り)</option>
             <option value="fill">Fill (引き伸ばし)</option>
+            <optgroup label="特殊効果">
+              <option value="circle">Circle: 丸い画像</option>
+              <option value="circle-fit">Circle-fit: 丸い画像(比率保持)</option>
+            </optgroup>
           </select>
           <div className="mt-2 text-xs text-slate-500">
             <div>• Contain: 画像全体が見える（余白あり）</div>

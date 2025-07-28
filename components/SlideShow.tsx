@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Presentation, Slide, TextLayer, ImageLayer, ShapeLayer } from '../types';
-import { TEXT_STYLES } from '../constants';
+import { TEXT_STYLES, CANVAS_SIZES } from '../constants';
 import { MarkdownRenderer } from '../utils/markdownRenderer';
 import { 
   ChevronLeft, 
@@ -35,34 +35,87 @@ const SlideShow: React.FC<SlideShowProps> = ({
   const [showControls, setShowControls] = useState(true);
   const [showNotes, setShowNotes] = useState(false);
   const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [isControlsHovered, setIsControlsHovered] = useState(false);
   const [speechEnabled, setSpeechEnabled] = useState(false);
   const [speechRate, setSpeechRate] = useState(1.0);
   const [speechPitch, setSpeechPitch] = useState(1.0);
   const [speechVoice, setSpeechVoice] = useState<SpeechSynthesisVoice | null>(null);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('ja');
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [showSpeechSettings, setShowSpeechSettings] = useState(false);
   const [speechCompleted, setSpeechCompleted] = useState(false);
   const [autoPlayTimeout, setAutoPlayTimeout] = useState<NodeJS.Timeout | null>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState(1);
+  const [viewOffset, setViewOffset] = useState({ x: 0, y: 0 });
 
   const currentSlide = presentation.slides[currentSlideIndex];
+  const canvasSize = CANVAS_SIZES[currentSlide.aspectRatio];
+
+  // Calculate fit-to-screen zoom whenever window resizes or slide changes
+  useEffect(() => {
+    const calculateFitZoom = () => {
+      if (!viewportRef.current) return;
+      
+      const viewport = viewportRef.current;
+      const viewportRect = viewport.getBoundingClientRect();
+      
+      // Calculate the scale to fit the canvas within the viewport with some padding (same as SlideCanvas)
+      const padding = 40; // 20px padding on each side
+      const availableWidth = Math.max(100, viewportRect.width - padding); // Ensure minimum width
+      const availableHeight = Math.max(100, viewportRect.height - padding); // Ensure minimum height
+      
+      // Calculate scale to fit the slide inside the viewport while maintaining aspect ratio
+      const scaleX = availableWidth / canvasSize.width;
+      const scaleY = availableHeight / canvasSize.height;
+      
+      // Use the smaller scale to ensure the slide fits completely (same as SlideCanvas Fit button)
+      const fitScale = Math.min(scaleX, scaleY, 1); // Don't scale above 100%
+      
+      // Reset to center and apply fit scale
+      setZoom(fitScale);
+      setViewOffset({ x: 0, y: 0 });
+    };
+
+    // Calculate initial fit
+    const timer = setTimeout(calculateFitZoom, 100);
+
+    // Recalculate on window resize
+    const handleResize = () => {
+      requestAnimationFrame(calculateFitZoom);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [canvasSize, currentSlideIndex]);
 
   // Initialize speech synthesis
   useEffect(() => {
     if ('speechSynthesis' in window) {
       const updateVoices = () => {
-        const voices = speechSynthesis.getVoices();
-        setAvailableVoices(voices);
+        const allVoices = speechSynthesis.getVoices();
+        setAvailableVoices(allVoices);
         
-        // 日本語の音声を優先して選択（voice-aloudアプリと同様のロジック）
-        if (voices.length > 0) {
-          const currentSelectedVoice = voices.find(v => v.voiceURI === speechVoice?.voiceURI);
+        // 選択された言語の音声を優先して選択
+        if (allVoices.length > 0) {
+          const currentSelectedVoice = allVoices.find(v => v.voiceURI === speechVoice?.voiceURI);
           if (!currentSelectedVoice) {
-            const japaneseVoice = voices.find(voice => voice.lang.startsWith('ja') && voice.localService) || 
-                                 voices.find(voice => voice.lang.startsWith('ja')) ||
-                                 voices.find(voice => voice.lang.includes('en') && voice.localService) ||
-                                 voices[0];
-            setSpeechVoice(japaneseVoice);
+            // 現在選択されている言語の音声を探す
+            const voicesForSelectedLang = allVoices.filter(voice => 
+              voice.lang.toLowerCase().startsWith(selectedLanguage.toLowerCase())
+            );
+            
+            if (voicesForSelectedLang.length > 0) {
+              setSpeechVoice(voicesForSelectedLang[0]);
+            } else {
+              // 選択言語がない場合は日本語を探す
+              const japaneseVoice = allVoices.find(voice => voice.lang.startsWith('ja'));
+              setSpeechVoice(japaneseVoice || allVoices[0]);
+            }
           }
         }
       };
@@ -125,19 +178,30 @@ const SlideShow: React.FC<SlideShowProps> = ({
         clearTimeout(prev);
       }
       
-      // 新しいタイマーを設定
+      // 新しいタイマーを設定 (5秒に延長)
       const timeout = setTimeout(() => {
-        setShowControls(false);
-      }, 3000);
+        // コントロールがホバーされている間は非表示にしない
+        if (!isControlsHovered) {
+          setShowControls(false);
+        }
+      }, 5000);
       
       return timeout;
     });
-  }, []);
+  }, [isControlsHovered]);
 
-  // Mouse movement shows controls
+  // Mouse movement shows controls (debounced)
   const handleMouseMove = useCallback(() => {
-    resetControlsTimeout();
+    // Debounce mouse move events to prevent excessive timer resets
+    const now = Date.now();
+    if (!(handleMouseMove as any).lastCall || now - (handleMouseMove as any).lastCall > 500) {
+      resetControlsTimeout();
+      (handleMouseMove as any).lastCall = now;
+    }
   }, [resetControlsTimeout]);
+
+  // Initialize debounce timestamp
+  (handleMouseMove as any).lastCall = 0;
 
   // Navigation functions
   const nextSlide = useCallback(() => {
@@ -352,7 +416,7 @@ const SlideShow: React.FC<SlideShowProps> = ({
   }, []);
 
   // Render layer function
-  const renderLayer = (layer: any, slideWidth: number, slideHeight: number) => {
+  const renderLayer = (layer: any) => {
     const layerStyle: React.CSSProperties = {
       position: 'absolute',
       left: `${layer.x}%`,
@@ -377,7 +441,7 @@ const SlideShow: React.FC<SlideShowProps> = ({
               justifyContent: layer.textAlign === 'left' ? 'flex-start' : 
                              layer.textAlign === 'right' ? 'flex-end' : 'center',
               textAlign: layer.textAlign,
-              fontSize: `${(layer.fontSize / 1920) * slideWidth}px`,
+              fontSize: `${layer.fontSize}px`,
               lineHeight: 1.2,
               wordBreak: 'break-word',
               padding: '8px',
@@ -408,8 +472,9 @@ const SlideShow: React.FC<SlideShowProps> = ({
               style={{
                 width: '100%',
                 height: '100%',
-                objectFit: layer.objectFit,
-                borderRadius: '4px',
+                objectFit: layer.objectFit === 'circle' || layer.objectFit === 'circle-fit' ? 
+                  (layer.objectFit === 'circle-fit' ? 'contain' : 'cover') : layer.objectFit,
+                borderRadius: layer.objectFit === 'circle' || layer.objectFit === 'circle-fit' ? '50%' : '4px',
               }}
               draggable={false}
             />
@@ -490,6 +555,8 @@ const SlideShow: React.FC<SlideShowProps> = ({
         className={`absolute inset-0 z-10 transition-opacity duration-300 ${
           showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
+        onMouseEnter={() => setIsControlsHovered(true)}
+        onMouseLeave={() => setIsControlsHovered(false)}
       >
         {/* Top Bar */}
         <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/50 to-transparent p-4">
@@ -622,24 +689,28 @@ const SlideShow: React.FC<SlideShowProps> = ({
       </div>
 
       {/* Slide Content */}
-      <div className="flex-1 flex items-center justify-center p-8">
+      <div 
+        ref={viewportRef}
+        className="flex-1 overflow-hidden"
+        style={{ position: 'relative' }}
+      >
         <div 
-          className="relative w-full h-full max-w-none"
+          className="absolute"
           style={{
+            width: canvasSize.width,
+            height: canvasSize.height,
+            transform: `translate(${viewOffset.x}px, ${viewOffset.y}px) scale(${zoom})`,
+            transformOrigin: 'center',
+            top: '50%',
+            left: '50%',
+            marginTop: -canvasSize.height / 2,
+            marginLeft: -canvasSize.width / 2,
             background: currentSlide.background,
-            aspectRatio: currentSlide.aspectRatio.replace(':', '/'),
-            maxHeight: '100%',
-            maxWidth: '100%',
           }}
         >
           {currentSlide.layers
             .sort((a, b) => a.zIndex - b.zIndex)
-            .map(layer => {
-              const slideElement = document.querySelector('[style*="aspect-ratio"]') as HTMLElement;
-              const slideWidth = slideElement?.offsetWidth || 1920;
-              const slideHeight = slideElement?.offsetHeight || 1080;
-              return renderLayer(layer, slideWidth, slideHeight);
-            })}
+            .map(layer => renderLayer(layer))}
         </div>
       </div>
 
@@ -739,22 +810,79 @@ const SlideShow: React.FC<SlideShowProps> = ({
 
             {/* Voice Selection */}
             <div className="bg-slate-700/50 p-4 rounded-lg ring-1 ring-slate-600/50">
-              <label className="block text-sm font-medium text-slate-300 mb-2">Voice</label>
-              <select
-                value={speechVoice?.voiceURI || ''}
-                onChange={(e) => {
-                  const selectedVoice = availableVoices.find(v => v.voiceURI === e.target.value);
-                  setSpeechVoice(selectedVoice || null);
-                }}
-                disabled={isSpeaking || availableVoices.length === 0}
-                className="w-full bg-slate-600 border-slate-500 rounded-md py-2 px-3 focus:ring-2 focus:ring-cyan-500 focus:outline-none focus:border-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed text-white"
-              >
-                {availableVoices.length > 0 ? availableVoices.map(voice => (
-                  <option key={voice.voiceURI} value={voice.voiceURI}>
-                    {`${voice.name} (${voice.lang})`}
-                  </option>
-                )) : <option>Loading voices...</option>}
-              </select>
+              <label className="block text-sm font-medium text-slate-300 mb-3">Voice Selection</label>
+              
+              {/* Language Selection */}
+              <div className="mb-3">
+                <label className="block text-xs text-slate-400 mb-1">Language</label>
+                <select
+                  value={selectedLanguage}
+                  onChange={(e) => {
+                    setSelectedLanguage(e.target.value);
+                    // 言語変更時に該当言語の最初の音声を自動選択
+                    const voicesForLang = availableVoices.filter(voice => 
+                      voice.lang.toLowerCase().startsWith(e.target.value.toLowerCase())
+                    );
+                    if (voicesForLang.length > 0) {
+                      setSpeechVoice(voicesForLang[0]);
+                    }
+                  }}
+                  disabled={isSpeaking}
+                  className="w-full bg-slate-600 border-slate-500 rounded-md py-2 px-3 focus:ring-2 focus:ring-cyan-500 focus:outline-none focus:border-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm"
+                >
+                  {[...new Set(availableVoices.map(voice => voice.lang.split('-')[0]))]
+                    .sort()
+                    .map(langCode => (
+                      <option key={langCode} value={langCode}>
+                        {langCode.toUpperCase()} - {
+                          langCode === 'ja' ? '日本語' :
+                          langCode === 'en' ? 'English' :
+                          langCode === 'de' ? 'Deutsch' :
+                          langCode === 'fr' ? 'Français' :
+                          langCode === 'es' ? 'Español' :
+                          langCode === 'it' ? 'Italiano' :
+                          langCode === 'ko' ? '한국어' :
+                          langCode === 'zh' ? '中文' :
+                          langCode === 'ru' ? 'Русский' :
+                          langCode === 'pt' ? 'Português' :
+                          langCode === 'ar' ? 'العربية' :
+                          langCode
+                        }
+                      </option>
+                    ))
+                  }
+                </select>
+              </div>
+
+              {/* Voice Selection for Selected Language */}
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Voice</label>
+                <select
+                  value={speechVoice?.voiceURI || ''}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      const selectedVoice = availableVoices.find(v => v.voiceURI === e.target.value);
+                      setSpeechVoice(selectedVoice || null);
+                    }
+                  }}
+                  disabled={isSpeaking}
+                  className="w-full bg-slate-600 border-slate-500 rounded-md py-2 px-3 focus:ring-2 focus:ring-cyan-500 focus:outline-none focus:border-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm"
+                >
+                  <option value="">Select voice...</option>
+                  {availableVoices
+                    .filter(voice => voice.lang.toLowerCase().startsWith(selectedLanguage.toLowerCase()))
+                    .map(voice => (
+                      <option key={voice.voiceURI} value={voice.voiceURI}>
+                        {voice.name}
+                      </option>
+                    ))
+                  }
+                </select>
+              </div>
+              
+              {availableVoices.length === 0 && (
+                <p className="text-xs text-slate-500 mt-2">Loading voices...</p>
+              )}
             </div>
 
             {/* Speed Control */}

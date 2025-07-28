@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Save, RotateCcw, Sun, Moon, Monitor } from 'lucide-react';
+import { ArrowLeft, Save, RotateCcw, Sun, Moon, Monitor, Key } from 'lucide-react';
 import { UserSettings, getUserSettings, saveUserSettings, resetUserSettings } from '../services/storageService';
 import { AI_TEMPERATURE_DEFAULTS } from '../services/geminiService';
 import { useTheme } from '../contexts/ThemeContext';
 import { AppTheme } from '../types';
+import { TaskBasedAIProviderSettings } from './TaskBasedAIProviderSettings';
+import MultiProviderApiKeyManager from './MultiProviderApiKeyManager';
+import { AIProviderType } from '../services/ai/aiProviderInterface';
 
 interface SettingsScreenProps {
   onBack: () => void;
@@ -14,6 +17,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
   const [hasChanges, setHasChanges] = useState(false);
   const { theme, setTheme } = useTheme();
   const [tempTheme, setTempTheme] = useState<AppTheme>(theme);
+  const [showApiKeyManager, setShowApiKeyManager] = useState(false);
   
   const themeOptions: { value: AppTheme; label: string; icon: React.ReactNode; description: string }[] = [
     { value: 'light', label: 'Light Mode', icon: <Sun size={20} />, description: 'Light color scheme' },
@@ -22,7 +26,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
   ];
 
   const handleSettingChange = (key: keyof UserSettings, value: any) => {
+    console.log(`⚙️ SettingsScreen: Changing ${key} to:`, value);
+    console.log(`🔍 SettingsScreen: Current settings before change:`, settings);
     const newSettings = { ...settings, [key]: value };
+    console.log(`📊 SettingsScreen: New settings:`, newSettings);
+    console.log(`🎯 SettingsScreen: Specific key ${key} now has value:`, newSettings[key]);
     setSettings(newSettings);
     setHasChanges(true);
   };
@@ -53,6 +61,45 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
 
   const getEffectiveTemperature = (taskType: keyof typeof AI_TEMPERATURE_DEFAULTS): number => {
     return settings.aiTemperatureOverrides?.[taskType] ?? AI_TEMPERATURE_DEFAULTS[taskType];
+  };
+
+  const handleApiKeyUpdate = (provider: AIProviderType, apiKey: string, additionalConfig?: any) => {
+    const updates: Partial<UserSettings> = {};
+    
+    // APIキーを設定
+    switch (provider) {
+      case 'gemini':
+        // Geminiは既存のlocalStorageシステムを使用
+        localStorage.setItem('slidemaster_user_api_key', apiKey);
+        break;
+      case 'azure':
+        updates.azureApiKey = apiKey;
+        if (additionalConfig?.azureEndpoint) {
+          updates.azureEndpoint = additionalConfig.azureEndpoint;
+        }
+        break;
+      case 'openai':
+        updates.openaiApiKey = apiKey;
+        break;
+      case 'claude':
+        updates.claudeApiKey = apiKey;
+        break;
+      case 'lmstudio':
+        if (additionalConfig?.lmStudioEndpoint) {
+          updates.lmStudioEndpoint = additionalConfig.lmStudioEndpoint;
+        }
+        break;
+      case 'fooocus':
+        if (additionalConfig?.fooucusEndpoint) {
+          updates.fooucusEndpoint = additionalConfig.fooucusEndpoint;
+        }
+        break;
+    }
+
+    // 設定を更新
+    const newSettings = { ...settings, ...updates };
+    setSettings(newSettings);
+    setHasChanges(true);
   };
 
   return (
@@ -153,69 +200,30 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
                 </div>
               )}
 
-              {/* AIモデル設定 */}
+              {/* タスク別AIプロバイダー設定 */}
               <div>
-                <label className="block text-sm font-medium mb-3">AIモデル設定</label>
+                <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <h3 className="font-medium text-blue-900 dark:text-blue-100">🔑 AIプロバイダー・APIキー設定</h3>
+                      <p className="text-sm text-blue-800 dark:text-blue-200 mt-1">
+                        AI機能の中心となる設定です。各プロバイダーのAPIキーとタスク別の使い分けを設定してください。
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setShowApiKeyManager(true)}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2 text-sm font-medium ml-4"
+                    >
+                      <Key className="w-4 h-4" />
+                      APIキー管理
+                    </button>
+                  </div>
+                </div>
                 
-                {/* テキスト生成モデル */}
-                <div className="mb-4">
-                  <label className="block text-xs font-medium text-gray-300 mb-2">テキスト生成</label>
-                  <select
-                    value={settings.aiModels?.textGeneration || 'gemini-1.5-pro'}
-                    onChange={(e) => handleSettingChange('aiModels', {
-                      ...(settings.aiModels || {}),
-                      textGeneration: e.target.value
-                    })}
-                    className="w-full p-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="gemini-2.5-pro" className="bg-gray-800 text-white">Gemini 2.5 Pro</option>
-                    <option value="gemini-2.5-flash" className="bg-gray-800 text-white">Gemini 2.5 Flash</option>
-                    <option value="gemini-2.5-flash-lite" className="bg-gray-800 text-white">Gemini 2.5 Flash Lite</option>
-                    <option value="gemini-2.0-flash" className="bg-gray-800 text-white">Gemini 2.0 Flash</option>
-                    <option value="gemini-2.0-flash-lite" className="bg-gray-800 text-white">Gemini 2.0 Flash Lite</option>
-                    <option value="gemini-1.5-pro-latest" className="bg-gray-800 text-white">Gemini 1.5 Pro Latest</option>
-                    <option value="gemini-1.5-flash-latest" className="bg-gray-800 text-white">Gemini 1.5 Flash Latest</option>
-                    <option value="gemma-3-27b-it" className="bg-gray-800 text-white">Gemma 3 27B IT</option>
-                    <option value="gemma-3-12b-it" className="bg-gray-800 text-white">Gemma 3 12B IT</option>
-                    <option value="gemma-3-4b-it" className="bg-gray-800 text-white">Gemma 3 4B IT</option>
-                    <option value="gemma-3n-e4b" className="bg-gray-800 text-white">Gemma 3n E4B</option>
-                    <option value="gemma-3n-e2b" className="bg-gray-800 text-white">Gemma 3n E2B</option>
-                  </select>
-                </div>
-
-                {/* 画像生成モデル */}
-                <div className="mb-4">
-                  <label className="block text-xs font-medium text-gray-300 mb-2">画像生成</label>
-                  <select
-                    value={settings.aiModels?.imageGeneration || 'gemini-1.5-pro'}
-                    onChange={(e) => handleSettingChange('aiModels', {
-                      ...(settings.aiModels || {}),
-                      imageGeneration: e.target.value
-                    })}
-                    className="w-full p-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="imagen-4" className="bg-gray-800 text-white">Imagen 4</option>
-                    <option value="imagen-3" className="bg-gray-800 text-white">Imagen 3</option>
-                  </select>
-                </div>
-
-                {/* 動画分析モデル */}
-                <div>
-                  <label className="block text-xs font-medium text-gray-300 mb-2">動画分析</label>
-                  <select
-                    value={settings.aiModels?.videoAnalysis || 'gemini-1.5-pro'}
-                    onChange={(e) => handleSettingChange('aiModels', {
-                      ...(settings.aiModels || {}),
-                      videoAnalysis: e.target.value
-                    })}
-                    className="w-full p-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="gemini-2.5-pro" className="bg-gray-800 text-white">Gemini 2.5 Pro</option>
-                    <option value="gemini-2.5-flash" className="bg-gray-800 text-white">Gemini 2.5 Flash</option>
-                    <option value="gemini-1.5-pro-latest" className="bg-gray-800 text-white">Gemini 1.5 Pro Latest</option>
-                    <option value="gemini-1.5-flash-latest" className="bg-gray-800 text-white">Gemini 1.5 Flash Latest</option>
-                  </select>
-                </div>
+                <TaskBasedAIProviderSettings 
+                  settings={settings} 
+                  onSettingChange={handleSettingChange} 
+                />
               </div>
             </div>
           </div>
@@ -275,6 +283,22 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
             未保存の変更があります
           </div>
         )}
+
+        {/* マルチプロバイダーAPIキー管理モーダル */}
+        <MultiProviderApiKeyManager
+          isOpen={showApiKeyManager}
+          onClose={() => setShowApiKeyManager(false)}
+          onApiKeyUpdate={handleApiKeyUpdate}
+          currentSettings={{
+            geminiApiKey: localStorage.getItem('slidemaster_user_api_key') || '',
+            azureApiKey: settings.azureApiKey || '',
+            azureEndpoint: settings.azureEndpoint || '',
+            openaiApiKey: settings.openaiApiKey || '',
+            claudeApiKey: settings.claudeApiKey || '',
+            lmStudioEndpoint: settings.lmStudioEndpoint || '',
+            fooucusEndpoint: settings.fooucusEndpoint || '',
+          }}
+        />
       </div>
     </div>
   );

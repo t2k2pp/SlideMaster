@@ -27,6 +27,51 @@ export const parseMarkdown = (text: string): React.ReactNode[] => {
           <span style={{ flex: 1 }}>{formattedBullet}</span>
         </div>
       );
+    } else if (line.trim().startsWith('### ')) {
+      // Handle H3 headings (###)
+      const headingText = line.trim().substring(4);
+      const formattedHeading = formatInlineMarkdown(headingText);
+      result.push(
+        <div key={lineIndex} style={{ 
+          marginBottom: '0.5em', 
+          width: '100%',
+          fontSize: '1.2em',
+          fontWeight: 'bold',
+          lineHeight: '1.3'
+        }}>
+          {formattedHeading}
+        </div>
+      );
+    } else if (line.trim().startsWith('## ')) {
+      // Handle H2 headings (##)
+      const headingText = line.trim().substring(3);
+      const formattedHeading = formatInlineMarkdown(headingText);
+      result.push(
+        <div key={lineIndex} style={{ 
+          marginBottom: '0.6em', 
+          width: '100%',
+          fontSize: '1.4em',
+          fontWeight: 'bold',
+          lineHeight: '1.2'
+        }}>
+          {formattedHeading}
+        </div>
+      );
+    } else if (line.trim().startsWith('# ')) {
+      // Handle H1 headings (#)
+      const headingText = line.trim().substring(2);
+      const formattedHeading = formatInlineMarkdown(headingText);
+      result.push(
+        <div key={lineIndex} style={{ 
+          marginBottom: '0.8em', 
+          width: '100%',
+          fontSize: '1.6em',
+          fontWeight: 'bold',
+          lineHeight: '1.1'
+        }}>
+          {formattedHeading}
+        </div>
+      );
     } else if (line.trim() !== '') {
       // Handle regular lines
       const formattedLine = formatInlineMarkdown(line);

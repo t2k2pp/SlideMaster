@@ -11,17 +11,21 @@ interface ProjectCreatorProps {
   isProcessing: boolean;
 }
 
-const THEMES: { value: PresentationTheme; label: string; description: string }[] = [
-  { value: 'auto', label: 'Auto', description: 'AI will choose the best theme' },
-  { value: 'professional', label: 'Professional', description: 'Clean, business-oriented design' },
-  { value: 'creative', label: 'Creative', description: 'Colorful and artistic design' },
-  { value: 'academic', label: 'Academic', description: 'Scholarly and formal design' },
-  { value: 'modern', label: 'Modern', description: 'Contemporary and minimalist' },
-  { value: 'elegant', label: 'Elegant', description: 'Sophisticated and refined' },
-  { value: 'playful', label: 'Playful', description: 'Fun and engaging design' },
-  { value: 'minimal', label: 'Minimal', description: 'Simple and clean design' },
-  { value: 'dark', label: 'Dark', description: 'Dark theme for modern look' },
-  { value: 'colorful', label: 'Colorful', description: 'Vibrant and eye-catching' },
+const THEMES: { value: PresentationTheme; name: string; color: string; textColor: string; category: string }[] = [
+  // Basic Themes
+  { value: 'professional', name: 'Professional', color: '#111827', textColor: '#ffffff', category: 'Basic' },
+  { value: 'creative', name: 'Creative', color: '#312e81', textColor: '#fcd34d', category: 'Basic' },
+  { value: 'minimalist', name: 'Minimalist', color: '#ffffff', textColor: '#1f2937', category: 'Basic' },
+  { value: 'playful', name: 'Playful', color: '#155e75', textColor: '#ffffff', category: 'Basic' },
+  
+  // Academic & Professional
+  { value: 'academic', name: 'Academic', color: '#0f172a', textColor: '#60a5fa', category: 'Academic' },
+  { value: 'medical', name: 'Medical', color: '#ffffff', textColor: '#0369a1', category: 'Professional' },
+  { value: 'tech_modern', name: 'Tech Modern', color: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', textColor: '#22d3ee', category: 'Tech' },
+  
+  // Style & Aesthetic
+  { value: 'elegant_luxury', name: 'Elegant Luxury', color: 'linear-gradient(135deg, #1c1917 0%, #44403c 100%)', textColor: '#fbbf24', category: 'Style' },
+  { value: 'dark_modern', name: 'Dark Modern', color: '#020617', textColor: '#a78bfa', category: 'Modern' },
 ];
 
 export const ProjectCreator: React.FC<ProjectCreatorProps> = ({
@@ -29,7 +33,7 @@ export const ProjectCreator: React.FC<ProjectCreatorProps> = ({
   isProcessing
 }) => {
   const [newTitle, setNewTitle] = useState('');
-  const [selectedTheme, setSelectedTheme] = useState<PresentationTheme>('auto');
+  const [selectedTheme, setSelectedTheme] = useState<PresentationTheme>('professional');
 
   const handleCreate = () => {
     if (newTitle.trim() && !isProcessing) {
@@ -68,21 +72,46 @@ export const ProjectCreator: React.FC<ProjectCreatorProps> = ({
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">
+          <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-3">
             Theme
           </label>
-          <select
-            value={selectedTheme}
-            onChange={(e) => setSelectedTheme(e.target.value as PresentationTheme)}
-            className="w-full p-2 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500"
-            disabled={isProcessing}
-          >
-            {THEMES.map((theme) => (
-              <option key={theme.value} value={theme.value}>
-                {theme.label} - {theme.description}
-              </option>
-            ))}
-          </select>
+          <div className="max-h-64 overflow-y-auto space-y-3">
+            {['Basic', 'Academic', 'Professional', 'Tech', 'Style', 'Modern'].map(category => {
+              const categoryThemes = THEMES.filter(theme => theme.category === category);
+              if (categoryThemes.length === 0) return null;
+              
+              return (
+                <div key={category}>
+                  <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">{category}</div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    {categoryThemes.map(theme => (
+                      <button
+                        key={theme.value}
+                        onClick={() => setSelectedTheme(theme.value)}
+                        className={`p-2 rounded-lg border-2 transition-colors ${
+                          selectedTheme === theme.value
+                            ? 'border-cyan-500 bg-cyan-500/20'
+                            : 'border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600'
+                        }`}
+                        disabled={isProcessing}
+                      >
+                        <div 
+                          className="w-5 h-5 rounded mx-auto mb-1 flex items-center justify-center text-xs font-bold border border-slate-400 dark:border-slate-600"
+                          style={{ 
+                            background: theme.color,
+                            color: theme.textColor
+                          }}
+                        >
+                          {theme.name[0]}
+                        </div>
+                        <span className="text-xs font-medium text-slate-900 dark:text-white">{theme.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         <button
