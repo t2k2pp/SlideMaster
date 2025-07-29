@@ -183,6 +183,10 @@ export const AIGenerationForm: React.FC<AIGenerationFormProps> = ({
 
   // Show a notice if API key is not configured, but still display the form
   const showApiKeyNotice = !hasApiKey;
+  
+  // Debug logging
+  console.log('AIGenerationForm - hasApiKey:', hasApiKey);
+  console.log('AIGenerationForm - showApiKeyNotice:', showApiKeyNotice);
 
   return (
     <div className="space-y-6">
@@ -196,14 +200,14 @@ export const AIGenerationForm: React.FC<AIGenerationFormProps> = ({
         <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
           <div className="text-sm text-orange-800">
             <p className="font-medium mb-1">APIキーが必要です</p>
-            <p className="mb-3">AI機能を使用するには、Gemini APIキーの設定が必要です。</p>
+            <p className="mb-3">AI機能を使用するには、APIキーの設定が必要です。マルチプロバイダー設定でGemini、Azure、OpenAI、Claude等のAPIキーを設定してください。</p>
             {onApiKeySetup && (
               <div className="flex justify-center">
                 <button
                   onClick={onApiKeySetup}
                   className="px-3 py-2 bg-orange-600 text-slate-900 dark:text-white rounded-md hover:bg-orange-700 transition-colors text-sm"
                 >
-                  APIキーを設定
+                  マルチプロバイダー設定
                 </button>
               </div>
             )}

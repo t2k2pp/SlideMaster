@@ -248,7 +248,7 @@ export default function MultiProviderApiKeyManager({
               <div className="flex items-center space-x-3 mb-3">
                 <span className="text-2xl">{currentProvider.icon}</span>
                 <div>
-                  <h3 className="text-lg font-semibold">{currentProvider.name}</h3>
+                  <h3 className="text-lg font-semibold text-gray-600">{currentProvider.name}</h3>
                   <p className="text-sm text-gray-600">{currentProvider.description}</p>
                 </div>
               </div>

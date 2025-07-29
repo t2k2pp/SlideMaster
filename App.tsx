@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
 import { 
   Presentation, 
@@ -35,12 +35,14 @@ import { SettingsScreen } from './components/SettingsScreen';
 import SlideShow from './components/SlideShow';
 import PageNumberManager from './components/PageNumberManager';
 import VersionInfo from './components/VersionInfo';
-import ApiKeyManager from './components/ApiKeyManager';
+import MultiProviderApiKeyManager from './components/MultiProviderApiKeyManager';
+import { AIProviderType } from './services/ai/aiProviderInterface';
 
 // Import services (to be created)
 import * as geminiService from './services/geminiService';
 import * as storageService from './services/storageService';
 import * as exportService from './services/exportService';
+import * as aiServiceIntegration from './services/ai/aiServiceIntegration';
 
 // Import utilities
 import { updateAllPageNumbers } from './utils/pageNumbers';
@@ -97,7 +99,7 @@ const App: React.FC = () => {
     setShowWelcome(currentScreen === 'welcome');
   }, [currentScreen]);
 
-  // Load recent presentations on startup
+  // Load recent presentations and API settings on startup
   useEffect(() => {
     const loadRecentPresentations = async () => {
       try {
@@ -111,61 +113,216 @@ const App: React.FC = () => {
       }
     };
 
+    const loadApiKeySettings = () => {
+      console.log('Loading API key settings from localStorage...');
+      try {
+        const savedSettings = localStorage.getItem('slidemaster_api_settings');
+        console.log('loadApiKeySettings - raw localStorage data:', savedSettings);
+        
+        if (savedSettings) {
+          const settings = JSON.parse(savedSettings);
+          console.log('loadApiKeySettings - parsed settings:', settings);
+          console.log('loadApiKeySettings - setting apiKeySettings to:', { ...apiKeySettings, ...settings });
+          
+          setApiKeySettings(prev => ({ ...prev, ...settings }));
+          
+          // Apply settings directly with the loaded settings
+          try {
+            if (settings.geminiApiKey) {
+              console.log('loadApiKeySettings - setting Gemini API key');
+              geminiService.setApiKey(settings.geminiApiKey);
+            }
+          } catch (error) {
+            console.error('Failed to apply AI settings on startup:', error);
+          }
+        } else {
+          console.log('loadApiKeySettings - no saved settings found');
+          
+          // Check for old format API key migration
+          const oldApiKey = localStorage.getItem('slidemaster_user_api_key');
+          if (oldApiKey) {
+            console.log('loadApiKeySettings - migrating old API key:', oldApiKey);
+            const migratedSettings = { ...apiKeySettings, geminiApiKey: oldApiKey };
+            setApiKeySettings(migratedSettings);
+            localStorage.setItem('slidemaster_api_settings', JSON.stringify(migratedSettings));
+            geminiService.setApiKey(oldApiKey);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load API key settings:', error);
+      }
+    };
+
     loadRecentPresentations();
+    loadApiKeySettings();
   }, []);
+
 
   const [showWelcome, setShowWelcome] = useState(true);
   const [showAIAssistant, setShowAIAssistant] = useState(false);
   const [showExportManager, setShowExportManager] = useState(false);
-  const [showApiKeyManager, setShowApiKeyManager] = useState(false);
-  const [userApiKey, setUserApiKey] = useState<string>('');
   
   // Clipboard and Undo/Redo state
   const [clipboardLayer, setClipboardLayer] = useState<Layer | null>(null);
   const [undoState, setUndoState] = useState<Presentation | null>(null);
   const [redoState, setRedoState] = useState<Presentation | null>(null);
-  
-  // Check if default API key exists
-  const hasDefaultApiKey = !!process.env.API_KEY;
-  
-  // Load user API key from localStorage on startup
-  useEffect(() => {
-    const savedApiKey = localStorage.getItem('slidemaster_user_api_key');
-    if (savedApiKey) {
-      setUserApiKey(savedApiKey);
-      geminiService.setApiKey(savedApiKey);
-    }
-  }, []);
-  
-  // Handle API key updates
-  const handleApiKeyUpdate = useCallback((apiKey: string) => {
-    setUserApiKey(apiKey);
-    if (apiKey) {
-      localStorage.setItem('slidemaster_user_api_key', apiKey);
-      geminiService.setApiKey(apiKey);
-    } else {
-      localStorage.removeItem('slidemaster_user_api_key');
-    }
-    toast.success(apiKey ? 'APIキーが保存されました' : 'APIキーがクリアされました');
-  }, []);
-  
-  // Check if AI features are available
-  const isAIAvailable = userApiKey || hasDefaultApiKey;
-  
-  // Show warning and offer API key setup if AI features are not available
-  const requireAIFeature = useCallback(() => {
-    if (!isAIAvailable) {
-      toast.error('AI機能を使用するにはAPIキーの設定が必要です');
-      setShowApiKeyManager(true);
-      return false;
-    }
-    return true;
-  }, [isAIAvailable]);
+
   const [showSlideShow, setShowSlideShow] = useState(false);
   const [showPageNumberManager, setShowPageNumberManager] = useState(false);
   const [showVersionInfo, setShowVersionInfo] = useState(false);
   const [slideShowStartIndex, setSlideShowStartIndex] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Multi-provider API key management
+  const [showMultiProviderApiKeyManager, setShowMultiProviderApiKeyManager] = useState(false);
+  const [apiKeySettings, setApiKeySettings] = useState({
+    geminiApiKey: '',
+    azureApiKey: '',
+    azureEndpoint: '',
+    openaiApiKey: '',
+    claudeApiKey: '',
+    lmStudioEndpoint: 'http://localhost:1234',
+    fooucusEndpoint: 'http://localhost:7865',
+  });
+
+  // Apply API settings to AI services
+  const applyAISettings = useCallback(() => {
+    try {
+      // For now, primarily configure Gemini (the main provider)
+      if (apiKeySettings.geminiApiKey) {
+        geminiService.setApiKey(apiKeySettings.geminiApiKey);
+      }
+      
+      // Future: Configure other providers as they become available
+      // TODO: Implement multi-provider configuration when AI factory is ready
+      
+    } catch (error) {
+      console.error('Failed to apply AI settings:', error);
+    }
+  }, [apiKeySettings]);
+
+  // Multi-provider API key management
+  const handleMultiProviderApiKeyUpdate = useCallback((provider: AIProviderType, apiKey: string, additionalConfig?: any) => {
+    const newSettings = { ...apiKeySettings };
+    
+    switch (provider) {
+      case 'gemini':
+        newSettings.geminiApiKey = apiKey;
+        break;
+      case 'azure':
+        newSettings.azureApiKey = apiKey;
+        if (additionalConfig?.azureEndpoint) {
+          newSettings.azureEndpoint = additionalConfig.azureEndpoint;
+        }
+        break;
+      case 'openai':
+        newSettings.openaiApiKey = apiKey;
+        break;
+      case 'claude':
+        newSettings.claudeApiKey = apiKey;
+        break;
+      case 'lmstudio':
+        if (additionalConfig?.lmStudioEndpoint) {
+          newSettings.lmStudioEndpoint = additionalConfig.lmStudioEndpoint;
+        }
+        break;
+      case 'fooocus':
+        if (additionalConfig?.fooucusEndpoint) {
+          newSettings.fooucusEndpoint = additionalConfig.fooucusEndpoint;
+        }
+        break;
+    }
+    
+    setApiKeySettings(newSettings);
+    
+    // Save to localStorage
+    try {
+      console.log('Saving API key settings to localStorage:', newSettings);
+      localStorage.setItem('slidemaster_api_settings', JSON.stringify(newSettings));
+      console.log('API key settings saved successfully');
+      toast.success('APIキー設定が保存されました');
+    } catch (error) {
+      console.error('Failed to save API key settings:', error);
+      toast.error('APIキー設定の保存に失敗しました');
+    }
+  }, [apiKeySettings]);
+
+  // Check if any AI features are available (primarily Gemini for now)
+  const isAIAvailable = useMemo(() => {
+    // First check from state
+    const stateBasedAvailable = apiKeySettings.geminiApiKey || 
+                               apiKeySettings.azureApiKey || 
+                               apiKeySettings.openaiApiKey || 
+                               apiKeySettings.claudeApiKey ||
+                               apiKeySettings.lmStudioEndpoint !== 'http://localhost:1234' ||
+                               apiKeySettings.fooucusEndpoint !== 'http://localhost:7865';
+    
+    // If state-based check fails, also check localStorage directly as fallback
+    let localStorageBasedAvailable = false;
+    try {
+      const savedSettings = localStorage.getItem('slidemaster_api_settings');
+      console.log('localStorage raw data:', savedSettings);
+      
+      if (savedSettings) {
+        const settings = JSON.parse(savedSettings);
+        console.log('localStorage parsed settings:', settings);
+        
+        localStorageBasedAvailable = settings.geminiApiKey || 
+                                   settings.azureApiKey || 
+                                   settings.openaiApiKey || 
+                                   settings.claudeApiKey ||
+                                   (settings.lmStudioEndpoint && settings.lmStudioEndpoint !== 'http://localhost:1234') ||
+                                   (settings.fooucusEndpoint && settings.fooucusEndpoint !== 'http://localhost:7865');
+        
+        console.log('localStorage geminiApiKey:', settings.geminiApiKey);
+        console.log('localStorage based available:', localStorageBasedAvailable);
+      } else {
+        console.log('No slidemaster_api_settings found in localStorage');
+        
+        // Check for old key format as well
+        const oldKey = localStorage.getItem('slidemaster_user_api_key');
+        console.log('Old format API key:', oldKey);
+        if (oldKey) {
+          localStorageBasedAvailable = true;
+          console.log('Found API key in old format');
+        }
+      }
+    } catch (error) {
+      console.error('Error checking localStorage for API keys:', error);
+    }
+    
+    const available = stateBasedAvailable || localStorageBasedAvailable;
+    
+    // Debug logging
+    console.log('apiKeySettings:', apiKeySettings);
+    console.log('stateBasedAvailable:', stateBasedAvailable);
+    console.log('localStorageBasedAvailable:', localStorageBasedAvailable);
+    console.log('final isAIAvailable:', available);
+    
+    return available;
+  }, [apiKeySettings]);
+
+  const requireAIFeature = useCallback(() => {
+    // Double-check API key availability with more detailed logging
+    console.log('requireAIFeature called');
+    console.log('isAIAvailable:', isAIAvailable);
+    console.log('Current apiKeySettings:', apiKeySettings);
+    
+    if (!isAIAvailable) {
+      console.log('No API key available, showing setup dialog');
+      toast.error('AI機能を使用するにはAPIキーの設定が必要です');
+      setShowMultiProviderApiKeyManager(true);
+      return false;
+    }
+    
+    console.log('API key available, proceeding with AI features');
+    return true;
+  }, [isAIAvailable, apiKeySettings]);
+
+  // Apply API settings whenever apiKeySettings changes
+  useEffect(() => {
+    applyAISettings();
+  }, [applyAISettings]);
 
   // =================================================================
   // Derived State
@@ -684,61 +841,141 @@ const App: React.FC = () => {
     
     try {
       setIsProcessing(true);
-      const presentation = await geminiService.generatePresentation(request, userApiKey);
       
-      setAppState(prev => ({
-        ...prev,
-        currentPresentation: presentation,
-        currentSlideIndex: 0,
-      }));
-      
-      setCurrentScreen('editor');
-      toast.success('Slides generated successfully!');
+      // For now, use Gemini if available, otherwise show error
+      if (apiKeySettings.geminiApiKey) {
+        const presentation = await geminiService.generatePresentation(request, apiKeySettings.geminiApiKey);
+        
+        setAppState(prev => ({
+          ...prev,
+          currentPresentation: presentation,
+          currentSlideIndex: 0,
+        }));
+        
+        setCurrentScreen('editor');
+        toast.success('Slides generated successfully!');
+      } else {
+        // TODO: Use other providers when available
+        toast.error('Gemini APIキーが設定されていません。設定画面でAPIキーを設定してください。');
+      }
     } catch (error) {
       console.error('Error generating slides:', error);
       toast.error('Failed to generate slides');
     } finally {
       setIsProcessing(false);
     }
-  }, []);
+  }, [requireAIFeature, apiKeySettings.geminiApiKey]);
 
   const generateElement = useCallback(async (request: ElementGenerationRequest) => {
     if (!requireAIFeature()) return;
     
     try {
       setIsProcessing(true);
-      const element = await geminiService.generateElement(request, userApiKey);
-      addLayer(element);
-      toast.success('Element generated successfully!');
+      
+      if (apiKeySettings.geminiApiKey) {
+        const element = await geminiService.generateElement(request, apiKeySettings.geminiApiKey);
+        addLayer(element);
+        toast.success('Element generated successfully!');
+      } else {
+        toast.error('Gemini APIキーが設定されていません。設定画面でAPIキーを設定してください。');
+      }
     } catch (error) {
       console.error('Error generating element:', error);
       toast.error('Failed to generate element');
     } finally {
       setIsProcessing(false);
     }
-  }, [addLayer]);
+  }, [requireAIFeature, apiKeySettings.geminiApiKey, addLayer]);
 
   const assistWithContent = useCallback(async (request: AIAssistRequest) => {
     if (!requireAIFeature()) return;
     
     try {
       setIsProcessing(true);
-      const result = await geminiService.assistWithContent(request, userApiKey);
       
-      if (request.targetLayer) {
-        updateLayer(request.targetLayer, result.layerUpdates);
+      if (apiKeySettings.geminiApiKey) {
+        const result = await geminiService.assistWithContent(request, apiKeySettings.geminiApiKey);
+        
+        if (request.targetLayer) {
+          updateLayer(request.targetLayer, result.layerUpdates);
+        } else {
+          updateSlide(appState.currentSlideIndex, result.slideUpdates);
+        }
+        
+        toast.success('Content updated successfully!');
       } else {
-        updateSlide(appState.currentSlideIndex, result.slideUpdates);
+        toast.error('Gemini APIキーが設定されていません。設定画面でAPIキーを設定してください。');
       }
-      
-      toast.success('Content updated successfully!');
     } catch (error) {
       console.error('Error with AI assist:', error);
       toast.error('Failed to assist with content');
     } finally {
       setIsProcessing(false);
     }
-  }, [updateLayer, updateSlide, appState.currentSlideIndex]);
+  }, [requireAIFeature, apiKeySettings.geminiApiKey, updateLayer, updateSlide, appState.currentSlideIndex]);
+
+  const retryFailedImages = useCallback(async (failedImageIds: string[]) => {
+    if (!requireAIFeature()) return;
+    if (!appState.currentPresentation) return;
+    
+    try {
+      setIsProcessing(true);
+      
+      if (apiKeySettings.geminiApiKey) {
+        // Find failed image layers and their prompts
+        const imagesToRetry: Array<{
+          slideIndex: number;
+          layerId: string;
+          prompt: string;
+        }> = [];
+        
+        appState.currentPresentation.slides.forEach((slide, slideIndex) => {
+          slide.layers.forEach(layer => {
+            if (layer.type === 'image' && failedImageIds.includes(layer.id)) {
+              const imageLayer = layer as any; // Type assertion for prompt access
+              imagesToRetry.push({
+                slideIndex,
+                layerId: layer.id,
+                prompt: imageLayer.prompt || 'Generate image'
+              });
+            }
+          });
+        });
+        
+        toast.success(`画像の再生成を開始します... (${imagesToRetry.length}枚)`);
+        
+        // Regenerate each image
+        for (const imageInfo of imagesToRetry) {
+          try {
+            const newImageSrc = await geminiService.generateImage(
+              imageInfo.prompt,
+              undefined, // imageSettings
+              'business_presentation',
+              imageInfo.slideIndex,
+              [], // characterContext
+              undefined, // referenceImageContext
+              apiKeySettings.geminiApiKey
+            );
+            
+            // Update the layer with the new image
+            updateLayer(imageInfo.layerId, { src: newImageSrc });
+            
+          } catch (error) {
+            console.error(`Failed to regenerate image for layer ${imageInfo.layerId}:`, error);
+          }
+        }
+        
+        toast.success(`${imagesToRetry.length}枚の画像の再生成が完了しました！`);
+      } else {
+        toast.error('Gemini APIキーが設定されていません。設定画面でAPIキーを設定してください。');
+      }
+    } catch (error) {
+      console.error('Error retrying failed images:', error);
+      toast.error('Failed to retry failed images');
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [requireAIFeature, apiKeySettings.geminiApiKey, appState.currentPresentation, updateLayer]);
 
   // =================================================================
   // View State Management - (Moved to layer management section)
@@ -1115,21 +1352,10 @@ const App: React.FC = () => {
           isProcessing={isProcessing}
           hasApiKey={isAIAvailable}
           onApiKeySetup={() => {
-            setShowApiKeyManager(true);
+            setShowMultiProviderApiKeyManager(true);
           }}
         />
         
-        {showApiKeyManager && (
-          <ApiKeyManager 
-            isOpen={showApiKeyManager}
-            onClose={() => {
-              setShowApiKeyManager(false);
-            }}
-            onApiKeyUpdate={handleApiKeyUpdate}
-            currentApiKey={userApiKey}
-            hasDefaultKey={hasDefaultApiKey}
-          />
-        )}
         
           <Toaster 
             position="bottom-center"
@@ -1262,14 +1488,16 @@ const App: React.FC = () => {
           onSlideGenerate={generateSlides}
           onElementGenerate={generateElement}
           onContentAssist={assistWithContent}
+          onRetryFailedImages={retryFailedImages}
           isProcessing={isProcessing}
           error={appState.error}
           onClose={() => setShowAIAssistant(false)}
           hasApiKey={isAIAvailable}
           onApiKeySetup={() => {
             setShowAIAssistant(false);
-            setShowApiKeyManager(true);
+            setShowMultiProviderApiKeyManager(true);
           }}
+          currentPresentation={appState.currentPresentation}
         />
       )}
 
@@ -1305,14 +1533,12 @@ const App: React.FC = () => {
         />
       )}
 
-
-      {showApiKeyManager && (
-        <ApiKeyManager 
-          isOpen={showApiKeyManager}
-          onClose={() => setShowApiKeyManager(false)}
-          onApiKeyUpdate={handleApiKeyUpdate}
-          currentApiKey={userApiKey}
-          hasDefaultKey={hasDefaultApiKey}
+      {showMultiProviderApiKeyManager && (
+        <MultiProviderApiKeyManager 
+          isOpen={showMultiProviderApiKeyManager}
+          onClose={() => setShowMultiProviderApiKeyManager(false)}
+          onApiKeyUpdate={handleMultiProviderApiKeyUpdate}
+          currentSettings={apiKeySettings}
         />
       )}
 
