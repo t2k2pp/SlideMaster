@@ -128,6 +128,11 @@ export default function MultiProviderApiKeyManager({
     const apiKey = apiKeys[selectedProvider] || '';
     const additionalConfig: any = {};
     
+    console.log('💾 Save button clicked for provider:', selectedProvider);
+    console.log('💾 Current apiKeys:', apiKeys);
+    console.log('💾 Selected provider API key:', apiKey);
+    console.log('💾 Current additionalConfigs:', additionalConfigs);
+    
     // 追加設定を収集
     if (currentProvider.additionalFields) {
       currentProvider.additionalFields.forEach(field => {
@@ -135,6 +140,9 @@ export default function MultiProviderApiKeyManager({
       });
     }
 
+    console.log('💾 Final additionalConfig:', additionalConfig);
+    console.log('💾 Calling onApiKeyUpdate with:', { provider: selectedProvider, apiKey, additionalConfig });
+    
     onApiKeyUpdate(selectedProvider, apiKey, additionalConfig);
     onClose();
   };
@@ -156,9 +164,10 @@ export default function MultiProviderApiKeyManager({
       const hasAdditionalConfig = !config.additionalFields || 
         config.additionalFields.every(field => additionalConfigs[field.key]?.trim().length > 0);
       
+      // APIキーが必須の場合の論理
       if (hasApiKey && hasAdditionalConfig) return 'configured';
-      if (hasApiKey || hasAdditionalConfig) return 'partial';
-      return 'unconfigured';
+      if (hasApiKey && !hasAdditionalConfig) return 'partial'; // APIキーあり、追加設定不完全
+      return 'unconfigured'; // APIキーなしは常に未設定
     }
   };
 
@@ -349,6 +358,11 @@ export default function MultiProviderApiKeyManager({
         <div className="flex justify-between items-center p-6 border-t bg-gray-50">
           <button
             onClick={() => {
+              console.log('🧹 Clear button clicked for provider:', selectedProvider);
+              console.log('🧹 Current apiKeys before clear:', apiKeys);
+              console.log('🧹 Current additionalConfigs before clear:', additionalConfigs);
+              
+              // ローカル状態をクリア
               setApiKeys(prev => ({ ...prev, [selectedProvider]: '' }));
               if (currentProvider.additionalFields) {
                 const resetConfig = { ...additionalConfigs };
@@ -357,6 +371,17 @@ export default function MultiProviderApiKeyManager({
                 });
                 setAdditionalConfigs(resetConfig);
               }
+              
+              // 即座にlocalStorageにも反映（空文字で保存）
+              const additionalConfig: any = {};
+              if (currentProvider.additionalFields) {
+                currentProvider.additionalFields.forEach(field => {
+                  additionalConfig[field.key] = '';
+                });
+              }
+              
+              console.log('🧹 Calling onApiKeyUpdate with:', { provider: selectedProvider, apiKey: '', additionalConfig });
+              onApiKeyUpdate(selectedProvider, '', additionalConfig);
             }}
             className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
           >

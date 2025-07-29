@@ -99,6 +99,55 @@ const App: React.FC = () => {
     setShowWelcome(currentScreen === 'welcome');
   }, [currentScreen]);
 
+  // Load API key settings function
+  const loadApiKeySettings = useCallback(() => {
+    console.log('Loading API key settings from localStorage...');
+    try {
+      const savedSettings = localStorage.getItem('slidemaster_api_settings');
+      console.log('loadApiKeySettings - raw localStorage data:', savedSettings);
+      
+      if (savedSettings) {
+        const settings = JSON.parse(savedSettings);
+        console.log('loadApiKeySettings - parsed settings:', settings);
+        console.log('loadApiKeySettings - setting apiKeySettings to:', settings);
+        
+        setApiKeySettings(settings);  // 完全に置き換える
+        
+        // Apply settings directly with the loaded settings
+        try {
+          if (settings.geminiApiKey) {
+            console.log('loadApiKeySettings - setting Gemini API key');
+            geminiService.setApiKey(settings.geminiApiKey);
+          }
+        } catch (error) {
+          console.error('Failed to apply AI settings on startup:', error);
+        }
+      } else {
+        console.log('loadApiKeySettings - no saved settings found');
+        
+        // Check for old format API key migration
+        const oldApiKey = localStorage.getItem('slidemaster_user_api_key');
+        if (oldApiKey) {
+          console.log('loadApiKeySettings - migrating old API key:', oldApiKey);
+          const migratedSettings = {
+            geminiApiKey: oldApiKey,
+            azureApiKey: '',
+            azureEndpoint: '',
+            openaiApiKey: '',
+            claudeApiKey: '',
+            lmStudioEndpoint: 'http://localhost:1234',
+            fooucusEndpoint: 'http://localhost:7865',
+          };
+          setApiKeySettings(migratedSettings);
+          localStorage.setItem('slidemaster_api_settings', JSON.stringify(migratedSettings));
+          geminiService.setApiKey(oldApiKey);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load API key settings:', error);
+    }
+  }, []); // 依存配列を空にして無限ループを防ぐ
+
   // Load recent presentations and API settings on startup
   useEffect(() => {
     const loadRecentPresentations = async () => {
@@ -110,46 +159,6 @@ const App: React.FC = () => {
         }));
       } catch (error) {
         console.error('Failed to load recent presentations:', error);
-      }
-    };
-
-    const loadApiKeySettings = () => {
-      console.log('Loading API key settings from localStorage...');
-      try {
-        const savedSettings = localStorage.getItem('slidemaster_api_settings');
-        console.log('loadApiKeySettings - raw localStorage data:', savedSettings);
-        
-        if (savedSettings) {
-          const settings = JSON.parse(savedSettings);
-          console.log('loadApiKeySettings - parsed settings:', settings);
-          console.log('loadApiKeySettings - setting apiKeySettings to:', { ...apiKeySettings, ...settings });
-          
-          setApiKeySettings(prev => ({ ...prev, ...settings }));
-          
-          // Apply settings directly with the loaded settings
-          try {
-            if (settings.geminiApiKey) {
-              console.log('loadApiKeySettings - setting Gemini API key');
-              geminiService.setApiKey(settings.geminiApiKey);
-            }
-          } catch (error) {
-            console.error('Failed to apply AI settings on startup:', error);
-          }
-        } else {
-          console.log('loadApiKeySettings - no saved settings found');
-          
-          // Check for old format API key migration
-          const oldApiKey = localStorage.getItem('slidemaster_user_api_key');
-          if (oldApiKey) {
-            console.log('loadApiKeySettings - migrating old API key:', oldApiKey);
-            const migratedSettings = { ...apiKeySettings, geminiApiKey: oldApiKey };
-            setApiKeySettings(migratedSettings);
-            localStorage.setItem('slidemaster_api_settings', JSON.stringify(migratedSettings));
-            geminiService.setApiKey(oldApiKey);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load API key settings:', error);
       }
     };
 
@@ -203,22 +212,29 @@ const App: React.FC = () => {
 
   // Multi-provider API key management
   const handleMultiProviderApiKeyUpdate = useCallback((provider: AIProviderType, apiKey: string, additionalConfig?: any) => {
+    console.log('🔄 handleMultiProviderApiKeyUpdate called:', { provider, apiKey, additionalConfig });
+    console.log('📋 Current apiKeySettings before update:', apiKeySettings);
+    
     const newSettings = { ...apiKeySettings };
     
     switch (provider) {
       case 'gemini':
+        console.log('🎯 Setting gemini API key:', apiKey);
         newSettings.geminiApiKey = apiKey;
         break;
       case 'azure':
+        console.log('🎯 Setting azure API key:', apiKey);
         newSettings.azureApiKey = apiKey;
         if (additionalConfig?.azureEndpoint) {
           newSettings.azureEndpoint = additionalConfig.azureEndpoint;
         }
         break;
       case 'openai':
+        console.log('🎯 Setting openai API key:', apiKey);
         newSettings.openaiApiKey = apiKey;
         break;
       case 'claude':
+        console.log('🎯 Setting claude API key:', apiKey);
         newSettings.claudeApiKey = apiKey;
         break;
       case 'lmstudio':
@@ -233,73 +249,82 @@ const App: React.FC = () => {
         break;
     }
     
+    console.log('📊 New settings after update:', newSettings);
     setApiKeySettings(newSettings);
     
-    // Save to localStorage
+    // Save to localStorage with enhanced error handling
     try {
-      console.log('Saving API key settings to localStorage:', newSettings);
-      localStorage.setItem('slidemaster_api_settings', JSON.stringify(newSettings));
-      console.log('API key settings saved successfully');
+      console.log('💾 Saving API key settings to localStorage:', newSettings);
+      
+      // 空文字列のAPIキーの場合、localStorageから完全に削除
+      const cleanSettings = { ...newSettings };
+      Object.keys(cleanSettings).forEach(key => {
+        if (typeof cleanSettings[key] === 'string' && cleanSettings[key].trim() === '') {
+          if (key.includes('Endpoint')) {
+            // エンドポイントはデフォルト値に戻す
+            if (key === 'lmStudioEndpoint') cleanSettings[key] = 'http://localhost:1234';
+            if (key === 'fooucusEndpoint') cleanSettings[key] = 'http://localhost:7865';
+          }
+          // APIキーの場合は空文字列のまま保持（削除しない）
+        }
+      });
+      
+      // 強制的にlocalStorageをクリアしてから書き込み
+      localStorage.removeItem('slidemaster_api_settings');
+      localStorage.setItem('slidemaster_api_settings', JSON.stringify(cleanSettings));
+      
+      console.log('✅ API key settings saved successfully to localStorage');
+      
+      // 即座に保存されたかを確認
+      const saved = localStorage.getItem('slidemaster_api_settings');
+      console.log('🔍 Verification - what was actually saved:', saved);
+      
+      // 保存が成功しているかダブルチェック
+      if (saved) {
+        const parsedSaved = JSON.parse(saved);
+        console.log('🔍 Parsed verification:', parsedSaved);
+        
+        if (JSON.stringify(cleanSettings) === saved) {
+          console.log('✅ localStorage save verification successful');
+        } else {
+          console.warn('⚠️ localStorage save verification failed - content mismatch');
+        }
+      } else {
+        console.error('❌ localStorage save verification failed - no data found');
+      }
+      
       toast.success('APIキー設定が保存されました');
     } catch (error) {
-      console.error('Failed to save API key settings:', error);
+      console.error('❌ Failed to save API key settings:', error);
       toast.error('APIキー設定の保存に失敗しました');
     }
   }, [apiKeySettings]);
 
   // Check if any AI features are available (primarily Gemini for now)
   const isAIAvailable = useMemo(() => {
-    // First check from state
-    const stateBasedAvailable = apiKeySettings.geminiApiKey || 
-                               apiKeySettings.azureApiKey || 
-                               apiKeySettings.openaiApiKey || 
-                               apiKeySettings.claudeApiKey ||
-                               apiKeySettings.lmStudioEndpoint !== 'http://localhost:1234' ||
-                               apiKeySettings.fooucusEndpoint !== 'http://localhost:7865';
+    // 空文字列チェックを含む関数
+    const hasValidKey = (key: string) => key && key.trim().length > 0;
+    const hasValidEndpoint = (endpoint: string, defaultValue: string) => 
+      endpoint && endpoint.trim() !== defaultValue.trim();
     
-    // If state-based check fails, also check localStorage directly as fallback
-    let localStorageBasedAvailable = false;
-    try {
-      const savedSettings = localStorage.getItem('slidemaster_api_settings');
-      console.log('localStorage raw data:', savedSettings);
-      
-      if (savedSettings) {
-        const settings = JSON.parse(savedSettings);
-        console.log('localStorage parsed settings:', settings);
-        
-        localStorageBasedAvailable = settings.geminiApiKey || 
-                                   settings.azureApiKey || 
-                                   settings.openaiApiKey || 
-                                   settings.claudeApiKey ||
-                                   (settings.lmStudioEndpoint && settings.lmStudioEndpoint !== 'http://localhost:1234') ||
-                                   (settings.fooucusEndpoint && settings.fooucusEndpoint !== 'http://localhost:7865');
-        
-        console.log('localStorage geminiApiKey:', settings.geminiApiKey);
-        console.log('localStorage based available:', localStorageBasedAvailable);
-      } else {
-        console.log('No slidemaster_api_settings found in localStorage');
-        
-        // Check for old key format as well
-        const oldKey = localStorage.getItem('slidemaster_user_api_key');
-        console.log('Old format API key:', oldKey);
-        if (oldKey) {
-          localStorageBasedAvailable = true;
-          console.log('Found API key in old format');
-        }
-      }
-    } catch (error) {
-      console.error('Error checking localStorage for API keys:', error);
-    }
-    
-    const available = stateBasedAvailable || localStorageBasedAvailable;
+    // 状態ベースのチェック（空文字列も考慮）
+    const stateBasedAvailable = hasValidKey(apiKeySettings.geminiApiKey) || 
+                               hasValidKey(apiKeySettings.azureApiKey) || 
+                               hasValidKey(apiKeySettings.openaiApiKey) || 
+                               hasValidKey(apiKeySettings.claudeApiKey) ||
+                               hasValidEndpoint(apiKeySettings.lmStudioEndpoint, 'http://localhost:1234') ||
+                               hasValidEndpoint(apiKeySettings.fooucusEndpoint, 'http://localhost:7865');
     
     // Debug logging
     console.log('apiKeySettings:', apiKeySettings);
+    console.log('geminiApiKey check:', hasValidKey(apiKeySettings.geminiApiKey), 'value:', apiKeySettings.geminiApiKey);
+    console.log('azureApiKey check:', hasValidKey(apiKeySettings.azureApiKey), 'value:', apiKeySettings.azureApiKey);
+    console.log('openaiApiKey check:', hasValidKey(apiKeySettings.openaiApiKey), 'value:', apiKeySettings.openaiApiKey);
+    console.log('claudeApiKey check:', hasValidKey(apiKeySettings.claudeApiKey), 'value:', apiKeySettings.claudeApiKey);
     console.log('stateBasedAvailable:', stateBasedAvailable);
-    console.log('localStorageBasedAvailable:', localStorageBasedAvailable);
-    console.log('final isAIAvailable:', available);
+    console.log('final isAIAvailable:', stateBasedAvailable);
     
-    return available;
+    return stateBasedAvailable;
   }, [apiKeySettings]);
 
   const requireAIFeature = useCallback(() => {
@@ -1536,7 +1561,11 @@ const App: React.FC = () => {
       {showMultiProviderApiKeyManager && (
         <MultiProviderApiKeyManager 
           isOpen={showMultiProviderApiKeyManager}
-          onClose={() => setShowMultiProviderApiKeyManager(false)}
+          onClose={() => {
+            setShowMultiProviderApiKeyManager(false);
+            // 設定画面を閉じる時にAPIキー設定を再読み込み
+            loadApiKeySettings();
+          }}
           onApiKeyUpdate={handleMultiProviderApiKeyUpdate}
           currentSettings={apiKeySettings}
         />
