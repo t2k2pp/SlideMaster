@@ -506,7 +506,8 @@ export const getRecommendedModel = (
   task: TaskType,
   priority: Priority = 'quality'
 ): ModelInfo | null => {
-  const taskKey = `${task}Generation` as keyof ProviderModels;
+  // videoタスクは特別にvideoAnalysisに対応
+  const taskKey = task === 'video' ? 'videoAnalysis' : `${task}Generation` as keyof ProviderModels;
   const models = MODEL_REGISTRY_2025[provider][taskKey];
 
   if (!models || models.length === 0) {
@@ -592,7 +593,8 @@ export const getRecommendedModelForUseCase = (
 
 // プロバイダー別モデル取得
 export const getAvailableModels = (provider: AIProviderType, task: TaskType): ModelInfo[] => {
-  const taskKey = `${task}Generation` as keyof ProviderModels;
+  // videoタスクは特別にvideoAnalysisに対応
+  const taskKey = task === 'video' ? 'videoAnalysis' : `${task}Generation` as keyof ProviderModels;
   return MODEL_REGISTRY_2025[provider][taskKey] || [];
 };
 
