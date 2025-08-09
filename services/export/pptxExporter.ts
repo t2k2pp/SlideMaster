@@ -572,6 +572,22 @@ export const exportAsPPTXStructured = async (
                   h: h,
                 };
                 
+                // 🔧 ENSURE naturalWidth/naturalHeight are available for proper aspect ratio handling
+                if (objectFit === 'contain' && imageLayer.src && !imageLayer.src.includes('placehold.co')) {
+                  // If naturalWidth/naturalHeight are missing, get them synchronously
+                  if (!imageLayer.naturalWidth || !imageLayer.naturalHeight) {
+                    try {
+                      const dimensions = await getImageDimensions(imageLayer.src);
+                      imageLayer.naturalWidth = dimensions.width;
+                      imageLayer.naturalHeight = dimensions.height;
+                    } catch (error) {
+                      console.warn('Failed to get image dimensions, using defaults');
+                      imageLayer.naturalWidth = 1280;
+                      imageLayer.naturalHeight = 720;
+                    }
+                  }
+                }
+                
                 // Handle contain mode with manual size adjustment (PptxGenJS sizing bug workaround)
                 if (objectFit === 'contain' && imageLayer.naturalWidth && imageLayer.naturalHeight) {
                   const imageAspect = imageLayer.naturalWidth / imageLayer.naturalHeight;
@@ -954,6 +970,22 @@ export const exportAsPPTXWithOptions = async (
                   w: safeW,
                   h: safeH,
                 };
+                
+                // 🔧 ENSURE naturalWidth/naturalHeight are available for proper aspect ratio handling
+                if (objectFit === 'contain' && imageLayer.src && !imageLayer.src.includes('placehold.co')) {
+                  // If naturalWidth/naturalHeight are missing, get them synchronously
+                  if (!imageLayer.naturalWidth || !imageLayer.naturalHeight) {
+                    try {
+                      const dimensions = await getImageDimensions(imageLayer.src);
+                      imageLayer.naturalWidth = dimensions.width;
+                      imageLayer.naturalHeight = dimensions.height;
+                    } catch (error) {
+                      console.warn('[WithOptions] Failed to get image dimensions, using defaults');
+                      imageLayer.naturalWidth = 1280;
+                      imageLayer.naturalHeight = 720;
+                    }
+                  }
+                }
                 
                 switch (objectFit) {
                   case 'contain':

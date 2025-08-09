@@ -146,7 +146,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({
             <div className={`${resolvedTheme === 'dark' ? 'bg-orange-900/30 border-orange-700' : 'bg-orange-50 border-orange-200'} border rounded-lg p-4 mb-4`}>
               <div className={`text-sm ${resolvedTheme === 'dark' ? 'text-orange-200' : 'text-orange-800'}`}>
                 <p className="font-medium mb-1">APIキーが必要です</p>
-                <p className="mb-3">AI機能を使用するには、Gemini APIキーの設定が必要です。</p>
+                <p className="mb-3">AI機能を使用するには、Azure OpenAIの設定が必要です。</p>
                 <button
                   onClick={onApiKeySetup}
                   className="px-3 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors text-sm"

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Presentation, Slide, TextLayer, ImageLayer, ShapeLayer } from '../types';
 import { TEXT_STYLES, CANVAS_SIZES } from '../constants';
 import { MarkdownRenderer } from '../utils/markdownRenderer';
+import { getUserSettings, saveUserSettings, SpeechSettings } from '../services/storageService';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -36,14 +37,24 @@ const SlideShow: React.FC<SlideShowProps> = ({
   const [showNotes, setShowNotes] = useState(false);
   const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null);
   const [isControlsHovered, setIsControlsHovered] = useState(false);
-  const [speechEnabled, setSpeechEnabled] = useState(false);
-  const [speechRate, setSpeechRate] = useState(1.0);
-  const [speechPitch, setSpeechPitch] = useState(1.0);
+  // Load initial speech settings from storage
+  const initialSettings = getUserSettings().speechSettings || {
+    enabled: false,
+    rate: 1.0,
+    pitch: 1.0,
+    voiceURI: undefined,
+    selectedLanguage: 'ja',
+    showSettings: false,
+  };
+
+  const [speechEnabled, setSpeechEnabled] = useState(initialSettings.enabled);
+  const [speechRate, setSpeechRate] = useState(initialSettings.rate);
+  const [speechPitch, setSpeechPitch] = useState(initialSettings.pitch);
   const [speechVoice, setSpeechVoice] = useState<SpeechSynthesisVoice | null>(null);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [selectedLanguage, setSelectedLanguage] = useState<string>('ja');
+  const [selectedLanguage, setSelectedLanguage] = useState<string>(initialSettings.selectedLanguage);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [showSpeechSettings, setShowSpeechSettings] = useState(false);
+  const [showSpeechSettings, setShowSpeechSettings] = useState(initialSettings.showSettings);
   const [speechCompleted, setSpeechCompleted] = useState(false);
   const [autoPlayTimeout, setAutoPlayTimeout] = useState<NodeJS.Timeout | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -52,6 +63,28 @@ const SlideShow: React.FC<SlideShowProps> = ({
 
   const currentSlide = presentation.slides[currentSlideIndex];
   const canvasSize = CANVAS_SIZES[currentSlide.aspectRatio];
+
+  // Save speech settings to storage
+  const saveSpeechSettings = useCallback(() => {
+    const currentSettings = getUserSettings();
+    const updatedSettings = {
+      ...currentSettings,
+      speechSettings: {
+        enabled: speechEnabled,
+        rate: speechRate,
+        pitch: speechPitch,
+        voiceURI: speechVoice?.voiceURI,
+        selectedLanguage: selectedLanguage,
+        showSettings: showSpeechSettings,
+      }
+    };
+    saveUserSettings(updatedSettings);
+  }, [speechEnabled, speechRate, speechPitch, speechVoice, selectedLanguage, showSpeechSettings]);
+
+  // Save settings when they change
+  useEffect(() => {
+    saveSpeechSettings();
+  }, [saveSpeechSettings]);
 
   // Calculate fit-to-screen zoom whenever window resizes or slide changes
   useEffect(() => {
@@ -100,8 +133,19 @@ const SlideShow: React.FC<SlideShowProps> = ({
         const allVoices = speechSynthesis.getVoices();
         setAvailableVoices(allVoices);
         
-        // 選択された言語の音声を優先して選択
+        // 保存された音声設定を復元
         if (allVoices.length > 0) {
+          // 保存されたvoiceURIがある場合は、それを優先して復元
+          if (initialSettings.voiceURI) {
+            const savedVoice = allVoices.find(v => v.voiceURI === initialSettings.voiceURI);
+            if (savedVoice) {
+              setSpeechVoice(savedVoice);
+              console.log('Restored saved voice:', savedVoice.name);
+              return;
+            }
+          }
+          
+          // 保存された音声が見つからない場合は、現在選択されている言語の音声を探す
           const currentSelectedVoice = allVoices.find(v => v.voiceURI === speechVoice?.voiceURI);
           if (!currentSelectedVoice) {
             // 現在選択されている言語の音声を探す
@@ -111,10 +155,13 @@ const SlideShow: React.FC<SlideShowProps> = ({
             
             if (voicesForSelectedLang.length > 0) {
               setSpeechVoice(voicesForSelectedLang[0]);
+              console.log('Selected voice for language', selectedLanguage + ':', voicesForSelectedLang[0].name);
             } else {
               // 選択言語がない場合は日本語を探す
               const japaneseVoice = allVoices.find(voice => voice.lang.startsWith('ja'));
-              setSpeechVoice(japaneseVoice || allVoices[0]);
+              const fallbackVoice = japaneseVoice || allVoices[0];
+              setSpeechVoice(fallbackVoice);
+              console.log('Using fallback voice:', fallbackVoice.name);
             }
           }
         }
@@ -127,7 +174,7 @@ const SlideShow: React.FC<SlideShowProps> = ({
         speechSynthesis.onvoiceschanged = null;
       };
     }
-  }, [speechVoice]);
+  }, [speechVoice, selectedLanguage, initialSettings.voiceURI]);
 
   // Speech synthesis functions
   const speakText = useCallback((text: string) => {
@@ -431,6 +478,8 @@ const SlideShow: React.FC<SlideShowProps> = ({
     switch (layer.type) {
       case 'text':
         const textStyle = TEXT_STYLES.find(s => s.id === layer.textStyleId)?.style || {};
+        // レイヤーの個別色設定を優先、なければテキストスタイルの色、それもなければ黒色をデフォルトに
+        const textColor = layer.textColor || textStyle.color || '#000000';
         return (
           <div
             key={layer.id}
@@ -447,6 +496,7 @@ const SlideShow: React.FC<SlideShowProps> = ({
               padding: '8px',
               boxSizing: 'border-box',
               ...textStyle,
+              color: textColor, // 明示的に色を設定
             }}
           >
             <MarkdownRenderer 
@@ -856,7 +906,11 @@ const SlideShow: React.FC<SlideShowProps> = ({
 
               {/* Voice Selection for Selected Language */}
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Voice</label>
+                <label className="block text-xs text-slate-400 mb-1">
+                  Voice ({availableVoices.filter(voice => 
+                    voice.lang.toLowerCase().startsWith(selectedLanguage.toLowerCase())
+                  ).length} available)
+                </label>
                 <select
                   value={speechVoice?.voiceURI || ''}
                   onChange={(e) => {
@@ -873,15 +927,37 @@ const SlideShow: React.FC<SlideShowProps> = ({
                     .filter(voice => voice.lang.toLowerCase().startsWith(selectedLanguage.toLowerCase()))
                     .map(voice => (
                       <option key={voice.voiceURI} value={voice.voiceURI}>
-                        {voice.name}
+                        {voice.name} {voice.localService ? '(System)' : '(Network)'}
                       </option>
                     ))
                   }
                 </select>
+                
+                {/* Voice Details */}
+                {speechVoice && (
+                  <div className="mt-2 p-2 bg-slate-800/50 rounded text-xs text-slate-300">
+                    <div><strong>Name:</strong> {speechVoice.name}</div>
+                    <div><strong>Language:</strong> {speechVoice.lang}</div>
+                    <div><strong>Type:</strong> {speechVoice.localService ? 'System Voice' : 'Network Voice'}</div>
+                    <div><strong>Default:</strong> {speechVoice.default ? 'Yes' : 'No'}</div>
+                  </div>
+                )}
               </div>
               
               {availableVoices.length === 0 && (
                 <p className="text-xs text-slate-500 mt-2">Loading voices...</p>
+              )}
+              
+              {availableVoices.length > 0 && (
+                <div className="mt-2 text-xs text-slate-400">
+                  <div>Total voices available: <span className="text-cyan-400">{availableVoices.length}</span></div>
+                  <div>System voices: <span className="text-green-400">
+                    {availableVoices.filter(v => v.localService).length}
+                  </span></div>
+                  <div>Network voices: <span className="text-yellow-400">
+                    {availableVoices.filter(v => !v.localService).length}
+                  </span></div>
+                </div>
               )}
             </div>
 

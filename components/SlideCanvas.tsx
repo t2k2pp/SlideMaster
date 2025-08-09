@@ -43,7 +43,12 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
   // Shape selection dropdown state
   const [showShapeDropdown, setShowShapeDropdown] = useState(false);
 
-  const canvasSize = CANVAS_SIZES[slide.aspectRatio];
+  // aspectRatioの値をチェック
+  if (!CANVAS_SIZES[slide.aspectRatio]) {
+    console.warn('🚨 SlideCanvas: Invalid aspectRatio:', slide.aspectRatio, 'Available:', Object.keys(CANVAS_SIZES));
+  }
+  
+  const canvasSize = CANVAS_SIZES[slide.aspectRatio] || CANVAS_SIZES['16:9']; // デフォルトとして16:9を使用
   
   const selectedLayer = slide.layers.find(layer => layer.id === viewState.selectedLayerId);
 

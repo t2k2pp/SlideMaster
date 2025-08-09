@@ -13,6 +13,8 @@ dist
 dist-ssr
 *.local
 backup
+bk
+sample
 
 # Editor directories and files
 .vscode/*

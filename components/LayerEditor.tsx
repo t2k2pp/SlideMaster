@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { LayerEditorProps, TextLayer, ImageLayer, ShapeLayer } from '../types';
 import { TEXT_STYLES, THEME_CONFIGS } from '../constants';
-import { generateImage } from '../services/geminiService';
+import { generateSlideImage } from '../services/ai/unifiedAIService';
+import { setImageLayerNaturalDimensions } from '../utils/layerFactory';
 import { MarkdownRenderer } from '../utils/markdownRenderer';
 import { 
   Type, 
@@ -28,6 +29,34 @@ import {
   Undo,
   Redo,
 } from 'lucide-react';
+
+/**
+ * Get image dimensions from data URL or image source
+ */
+function getImageDimensions(src: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    // Check if we're in a browser environment
+    if (typeof window === 'undefined' || typeof Image === 'undefined') {
+      // Fallback for SSR or environments without Image constructor
+      resolve({ width: 1024, height: 1024 });
+      return;
+    }
+    
+    try {
+      const img = new (window as any).Image();
+      img.onload = () => {
+        resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      };
+      img.onerror = () => {
+        reject(new Error('Failed to load image'));
+      };
+      img.src = src;
+    } catch (error) {
+      console.warn('Image constructor not available, using fallback dimensions');
+      resolve({ width: 1024, height: 1024 });
+    }
+  });
+}
 
 // =================================================================
 // LayerEditor Component
@@ -772,19 +801,34 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
         // Use existing seed or generate new one if empty
         const usedSeed = imageLayer.seed || Math.floor(Math.random() * 2147483647);
         
-        const generatedImageSrc = await generateImage(
-          imageLayer.prompt,
-          undefined,
-          'business_presentation',
-          0,
-          [],
-          undefined,
-          undefined,
-          usedSeed
-        );
+        // 🎯 Context Intelligence Engine Enhanced Prompt Usage
+        let promptToUse = imageLayer.prompt;
         
-        // Update both src and seed (in case seed was generated)
-        onUpdate({ src: generatedImageSrc, seed: usedSeed });
+        // スライドメタデータからContext Intelligence Engineの拡張プロンプトを取得
+        if (slide && slide.metadata && slide.metadata.imagePrompt) {
+          console.log('🎭 Using Context Intelligence Engine enhanced image prompt!');
+          console.log('📝 Enhanced prompt length:', slide.metadata.imagePrompt.length);
+          promptToUse = slide.metadata.imagePrompt;
+        } else {
+          console.log('⚠️ No enhanced image prompt found, using basic prompt:', promptToUse);
+        }
+        
+        const generatedImageSrc = await generateSlideImage(promptToUse, {
+          size: '1024x1024',
+          quality: 'standard',
+          style: 'natural'
+        });
+        
+        // Get natural dimensions of the generated image
+        const dimensions = await getImageDimensions(generatedImageSrc);
+        
+        // Update src, seed, and natural dimensions
+        onUpdate({ 
+          src: generatedImageSrc, 
+          seed: usedSeed,
+          naturalWidth: dimensions.width,
+          naturalHeight: dimensions.height
+        });
       } catch (error) {
         console.error('Error generating image:', error);
         alert('Failed to generate image. Please try again.');
@@ -811,17 +855,32 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
       
       setIsGeneratingImage(true);
       try {
-        const generatedImageSrc = await generateImage(
-          imageLayer.prompt,
-          undefined,
-          'business_presentation',
-          0,
-          [],
-          undefined,
-          undefined,
-          imageLayer.seed
-        );
-        onUpdate({ src: generatedImageSrc });
+        // 🎯 Context Intelligence Engine Enhanced Prompt Usage (Regenerate with seed)
+        let promptToUse = imageLayer.prompt;
+        
+        // スライドメタデータからContext Intelligence Engineの拡張プロンプトを取得
+        if (slide && slide.metadata && slide.metadata.imagePrompt) {
+          console.log('🎭 Using Context Intelligence Engine enhanced image prompt for regeneration!');
+          console.log('📝 Enhanced prompt length:', slide.metadata.imagePrompt.length);
+          promptToUse = slide.metadata.imagePrompt;
+        } else {
+          console.log('⚠️ No enhanced image prompt found for regeneration, using basic prompt:', promptToUse);
+        }
+        
+        const generatedImageSrc = await generateSlideImage(promptToUse, {
+          size: '1024x1024',
+          quality: 'standard',
+          style: 'natural'
+        });
+        
+        // Get natural dimensions of the generated image
+        const dimensions = await getImageDimensions(generatedImageSrc);
+        
+        onUpdate({ 
+          src: generatedImageSrc,
+          naturalWidth: dimensions.width,
+          naturalHeight: dimensions.height
+        });
       } catch (error) {
         console.error('Error regenerating image:', error);
         alert('Failed to regenerate image. Please try again.');

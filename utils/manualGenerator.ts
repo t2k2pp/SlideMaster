@@ -175,23 +175,24 @@ function extractTimestampsFromLine(line: string): number[] {
 /**
  * Generate slides from manual sections
  */
-export function generateSlidesFromSections(
+export async function generateSlidesFromSections(
   sections: ManualSection[],
   frameGroups: string[][],
   options: ManualGeneratorOptions
-): Slide[] {
+): Promise<Slide[]> {
   const slides: Slide[] = [];
 
   // Create title slide with chapter overview
   const titleSlide = createTitleSlide(sections, options);
   slides.push(titleSlide);
 
-  sections.forEach((section, index) => {
+  for (let index = 0; index < sections.length; index++) {
+    const section = sections[index];
     if (section.level <= 2) { // Only create slides for main sections (h1, h2)
-      const slide = createSlideFromSection(section, frameGroups[index] || [], options, index + 1); // +1 for title slide
+      const slide = await createSlideFromSection(section, frameGroups[index] || [], options, index + 1); // +1 for title slide
       slides.push(slide);
     }
-  });
+  }
 
   return slides;
 }
@@ -274,7 +275,7 @@ function createTitleSlide(
 /**
  * Create a slide from a manual section
  */
-function createSlideFromSection(
+async function createSlideFromSection(
   section: ManualSection,
   frames: string[],
   options: ManualGeneratorOptions,
@@ -313,7 +314,7 @@ function createSlideFromSection(
   if (imagePosition === 'top') {
     // Images on top, text below
     if (frames.length > 0) {
-      const imageLayer = createImageLayer(frames[0], index, 10, 30, 80, 35, 0);
+      const imageLayer = await createImageLayer(frames[0], index, 10, 30, 80, 35, 0);
       layers.push(imageLayer);
     }
     const textLayer = createTextLayer(section.content, index, 5, 70, 90, 25, textColor);
@@ -323,13 +324,13 @@ function createSlideFromSection(
     const textLayer = createTextLayer(section.content, index, 5, 30, 90, 40, textColor);
     layers.push(textLayer);
     if (frames.length > 0) {
-      const imageLayer = createImageLayer(frames[0], index, 10, 75, 80, 20, 0);
+      const imageLayer = await createImageLayer(frames[0], index, 10, 75, 80, 20, 0);
       layers.push(imageLayer);
     }
   } else if (imagePosition === 'left') {
     // Images on left, text on right
     if (frames.length > 0) {
-      const imageLayer = createImageLayer(frames[0], index, 5, 30, 40, 55, 0);
+      const imageLayer = await createImageLayer(frames[0], index, 5, 30, 40, 55, 0);
       layers.push(imageLayer);
     }
     const textLayer = createTextLayer(section.content, index, 50, 30, 45, 55, textColor);
@@ -339,7 +340,7 @@ function createSlideFromSection(
     const textLayer = createTextLayer(section.content, index, 5, 30, 45, 55, textColor);
     layers.push(textLayer);
     if (frames.length > 0) {
-      const imageLayer = createImageLayer(frames[0], index, 55, 30, 40, 55, 0);
+      const imageLayer = await createImageLayer(frames[0], index, 55, 30, 40, 55, 0);
       layers.push(imageLayer);
     }
   }
@@ -347,7 +348,7 @@ function createSlideFromSection(
   // Add additional frame layers as overlapping candidates
   if (frames.length > 1) {
     for (let i = 1; i < Math.min(frames.length, 3); i++) {
-      const additionalImageLayer = createImageLayer(
+      const additionalImageLayer = await createImageLayer(
         frames[i],
         index,
         85 + (i - 1) * 5, // Slightly offset position
@@ -414,7 +415,7 @@ function createTextLayer(
 /**
  * Create image layer from frame data
  */
-function createImageLayer(
+async function createImageLayer(
   frameData: string,
   index: number,
   x: number,
@@ -422,7 +423,10 @@ function createImageLayer(
   width: number,
   height: number,
   frameIndex: number = 0
-): ImageLayer {
+): Promise<ImageLayer> {
+  // Get natural dimensions of the image
+  const dimensions = await getImageDimensions(frameData);
+  
   return {
     id: `manual-image-${index}-${frameIndex}-${Date.now()}`,
     type: 'image',
@@ -435,20 +439,40 @@ function createImageLayer(
     zIndex: 3,
     src: frameData,
     objectFit: 'cover',
+    naturalWidth: dimensions.width,
+    naturalHeight: dimensions.height,
     prompt: `Video frame from manual section ${index}, frame ${frameIndex}`
   };
 }
 
 /**
+ * Get image dimensions from data URL
+ */
+function getImageDimensions(dataUrl: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      // フォールバックとしてデフォルト値を返す
+      console.warn('Failed to load image for dimensions, using defaults');
+      resolve({ width: 1280, height: 720 });
+    };
+    img.src = dataUrl;
+  });
+}
+
+/**
  * Create presentation from manual content
  */
-export function createPresentationFromManual(
+export async function createPresentationFromManual(
   markdownContent: string,
   title: string,
   options: ManualGeneratorOptions
-): { sections: ManualSection[]; baseSlides: Slide[] } {
+): Promise<{ sections: ManualSection[]; baseSlides: Slide[] }> {
   const sections = parseManualMarkdown(markdownContent);
-  const baseSlides = generateSlidesFromSections(sections, [], options);
+  const baseSlides = await generateSlidesFromSections(sections, [], options);
 
   return {
     sections,

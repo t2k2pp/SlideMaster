@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Presentation, Slide, PresentationTheme } from '../../types';
 import { Video, Upload, Play, AlertCircle, Key } from 'lucide-react';
-import { generateSlidesFromVideo } from '../../services/geminiService';
+import { generateSlidesFromVideo, VideoGenerationOptions } from '../../services/ai/unifiedAIService';
 
 // =================================================================
 // Video Generation Form Component - Auto generate slides from video
@@ -163,9 +163,17 @@ export const VideoGenerationForm: React.FC<VideoGenerationFormProps> = ({
     try {
       setAutoProgress({ task: 'Processing video content...', progress: 30 });
       
+      // 内部のGenerationOptionsを統一サービスのVideoGenerationOptionsに変換
+      const videoOptions: VideoGenerationOptions = {
+        theme: generationOptions.theme,
+        aspectRatio: generationOptions.aspectRatio,
+        includeImages: generationOptions.includeImages,
+        slideCount: generationOptions.autoSlideCount ? 5 : generationOptions.slideCount
+      };
+
       const result = await generateSlidesFromVideo(
         autoVideoFile,
-        generationOptions
+        videoOptions
       );
 
       setAutoProgress({ task: 'Generating presentation...', progress: 80 });
@@ -199,7 +207,7 @@ export const VideoGenerationForm: React.FC<VideoGenerationFormProps> = ({
         <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
           <div className="text-sm text-orange-800">
             <p className="font-medium mb-1">APIキーが必要です</p>
-            <p className="mb-3">AI機能を使用するには、Gemini APIキーの設定が必要です。</p>
+            <p className="mb-3">AI機能を使用するには、動画解析用のAIプロバイダー（Gemini、Azure、OpenAI、Claude、LM Studio）の設定が必要です。</p>
             {onApiKeySetup && (
               <div className="flex justify-center">
                 <button

@@ -240,7 +240,7 @@ export interface AIInteractionHistoryItem {
   timestamp: Date;          // 実行日時
   
   // プロバイダー情報
-  provider: string;         // AIプロバイダー（gemini, azure, openai, etc）
+  provider: string;         // AIプロバイダー（azure）
   model: string;            // 使用モデル
   
   // 入出力データ
@@ -444,30 +444,12 @@ export interface ExportResult {
 
 export type AppTheme = 'light' | 'dark' | 'auto';
 
-// AI Model Types
-export type TextGenerationModel = 
-  | 'gemini-2.5-pro'
-  | 'gemini-2.5-flash'
-  | 'gemini-2.5-flash-lite'
-  | 'gemini-2.0-flash'
-  | 'gemini-2.0-flash-lite'
-  | 'gemini-1.5-pro-latest'
-  | 'gemini-1.5-flash-latest'
-  | 'gemma-3-27b-it'
-  | 'gemma-3-12b-it'
-  | 'gemma-3-4b-it'
-  | 'gemma-3n-e4b'
-  | 'gemma-3n-e2b';
+// AI Model Types - Azure OpenAI専用
+export type TextGenerationModel = string; // Azure deployment names
 
-export type ImageGenerationModel = 
-  | 'imagen-4'
-  | 'imagen-3';
+export type ImageGenerationModel = string; // Azure deployment names
 
-export type VideoAnalysisModel = 
-  | 'gemini-2.5-pro'
-  | 'gemini-2.5-flash'
-  | 'gemini-1.5-pro-latest'
-  | 'gemini-1.5-flash-latest';
+export type VideoAnalysisModel = string; // Azure deployment names
 
 export interface AIModelSettings {
   textGeneration: TextGenerationModel;

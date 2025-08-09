@@ -149,3 +149,44 @@ const extractChoiceContent = (content: string): string | null => {
 
   return null;
 };
+
+/**
+ * Set natural dimensions for an image layer when the image is loaded
+ */
+export const setImageLayerNaturalDimensions = async (layer: ImageLayer): Promise<ImageLayer> => {
+  if (!layer.src || layer.src.includes('placehold.co')) {
+    return layer;
+  }
+
+  try {
+    const dimensions = await getImageDimensions(layer.src);
+    return {
+      ...layer,
+      naturalWidth: dimensions.width,
+      naturalHeight: dimensions.height
+    };
+  } catch (error) {
+    console.warn('Failed to get image dimensions:', error);
+    return {
+      ...layer,
+      naturalWidth: 1280, // デフォルト値
+      naturalHeight: 720
+    };
+  }
+};
+
+/**
+ * Get image dimensions from data URL or image source
+ */
+function getImageDimensions(src: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      reject(new Error('Failed to load image'));
+    };
+    img.src = src;
+  });
+}

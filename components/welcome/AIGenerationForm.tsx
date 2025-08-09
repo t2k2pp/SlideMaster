@@ -185,8 +185,8 @@ export const AIGenerationForm: React.FC<AIGenerationFormProps> = ({
   const showApiKeyNotice = !hasApiKey;
   
   // Debug logging
-  console.log('AIGenerationForm - hasApiKey:', hasApiKey);
-  console.log('AIGenerationForm - showApiKeyNotice:', showApiKeyNotice);
+  //console.log('AIGenerationForm - hasApiKey:', hasApiKey);
+  //console.log('AIGenerationForm - showApiKeyNotice:', showApiKeyNotice);
 
   return (
     <div className="space-y-6">
