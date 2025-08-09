@@ -417,7 +417,7 @@ const defaultSettings: UserSettings = {
     },
     gemini: {
       textGeneration: 'gemini-2.5-flash',
-      imageGeneration: 'imagen-3.0-generate',
+      imageGeneration: 'imagen-3.0-generate-002',
       videoAnalysis: 'gemini-2.5-flash',
     },
   },

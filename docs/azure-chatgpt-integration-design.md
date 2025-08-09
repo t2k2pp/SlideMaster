@@ -51,12 +51,12 @@
 
 #### **Azure OpenAI Service** (Enterprise推奨)
 - **API Version**: 2024-10-21 (GA), 2025-04-01-preview
-- **最新モデル**: GPT-4.1, GPT-4o, o3-mini, GPT-image-1
+- **最新モデル**: GPT-5,GPT-4.1, GPT-4o, o3-mini, GPT-image-1
 - **特徴**: Enterprise SLA, HIPAA対応, 8x faster than OpenAI direct
 - **推奨用途**: 企業利用、コンプライアンス重視
 
 #### **OpenAI Direct API** (個人・スタートアップ推奨)
-- **最新モデル**: GPT-4.1 (1M context), o3-mini, GPT-4o-mini
+- **最新モデル**: GPT-5,GPT-4.1 (1M context), o3-mini, GPT-4o-mini
 - **特徴**: 最新モデル先行アクセス、簡単セットアップ
 - **価格**: GPT-4o-mini $0.80/$3.20 per M tokens
 - **推奨用途**: 個人利用、新機能優先

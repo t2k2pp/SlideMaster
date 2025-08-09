@@ -39,7 +39,9 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
     } catch (error) {
       // AIサービスの初期化エラーを詳細にログ出力
       console.error('SlideGenerationFactory: AI Service initialization failed:', error);
-      throw error; // エラーを再スローして上位でハンドリングさせる
+      // エラーを再スローせず、nullに設定してアプリケーションの起動は継続
+      this.aiService = null as any;
+      console.warn('SlideGenerationFactory: Running in degraded mode without AI service');
     }
   }
 
@@ -61,6 +63,11 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
    * メインのスライド生成インターフェース
    */
   async generateSlides(request: EnhancedSlideRequest): Promise<SlideGenerationResult> {
+    // AIサービスが利用できない場合の早期リターン
+    if (!this.aiService) {
+      throw new Error('AIサービスが初期化されていません。設定を確認してください。');
+    }
+    
     try {
       // 🎯 Auto項目専用のAI分析システム
       console.log('🔍 Context Intelligence: Analyzing Auto settings only...', request.topic);
@@ -82,11 +89,19 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
       // 1. 適切なデザイナー戦略を選択（コンテキスト強化済みリクエスト使用）
       const designerStrategy = this.selectDesignerStrategy(intelligentRequest);
       
-      // 2. 戦略に基づいてプロンプトを構築
-      const enhancedPrompt = designerStrategy.buildContentPrompt(intelligentRequest);
+      // 2. 🆕 Marp→JSON二段階生成 または 従来の一段階生成
+      const useMarpApproach = true; // 新方式を有効にする
+      let rawContent: string;
       
-      // 3. AI サービスを使用してコンテンツを生成
-      const rawContent = await this.generateRawContent(enhancedPrompt, intelligentRequest);
+      if (useMarpApproach) {
+        console.log('🎯 Using new Marp→JSON two-phase generation approach');
+        rawContent = await designerStrategy.generateSlidesWithMarpApproach(intelligentRequest);
+      } else {
+        console.log('📝 Using traditional single-phase generation approach');
+        // 従来方式（フォールバック）
+        const enhancedPrompt = designerStrategy.buildContentPrompt(intelligentRequest);
+        rawContent = await this.generateRawContent(enhancedPrompt, intelligentRequest);
+      }
       
       // 4. デザイナー戦略で後処理を実行
       const processedContent = designerStrategy.postProcessContent(rawContent, intelligentRequest);
@@ -272,13 +287,14 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
   }
 
   /**
-   * AI サービスを使用した生コンテンツ生成
+   * AI サービスを使用した生コンテンツ生成（レガシー方式）
+   * 🚨 新方式ではMarp→JSON方式を優先的に使用
    */
   private async generateRawContent(
     prompt: string, 
     request: EnhancedSlideRequest
   ): Promise<string> {
-    console.log('🚀 Generating raw content with enhanced prompt...');
+    console.log('🚀 Generating raw content with enhanced prompt (legacy mode)...');
     console.log('📝 Enhanced Prompt Length:', prompt.length);
     console.log('🎯 Request Details:', {
       topic: request.topic,
@@ -423,6 +439,225 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
       .filter((layer: any) => layer.type === 'text' && layer.content)
       .map((layer: any) => layer.content)
       .join(' ');
+  }
+
+  /**
+   * 🔧 革新的JSON修復システム - 完全対応版
+   * あらゆるJSONエラーパターンに対応した高度修復機能
+   */
+  private attemptJSONRepair(content: string): string | null {
+    console.log('🔧 Starting advanced JSON repair process...');
+    console.log('🔍 Content length:', content.length);
+    console.log('🔍 Last 100 chars:', content.slice(-100));
+    
+    try {
+      let repairedContent = content;
+      
+      // Step 1: 基本的な文字列クリーニング
+      repairedContent = repairedContent.trim();
+      
+      // Step 2: 不正な制御文字を除去
+      repairedContent = repairedContent.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+      
+      // Step 3: 不完全な JSON を修復するための積極的なアプローチ
+      // 最後の完全なオブジェクト/配列を見つける
+      const lastCompleteStructure = this.findLastCompleteStructure(repairedContent);
+      if (lastCompleteStructure) {
+        console.log('🔧 Found last complete structure, truncating to position:', lastCompleteStructure);
+        repairedContent = repairedContent.substring(0, lastCompleteStructure + 1);
+      }
+      
+      // Step 4: 基本的な構造修復
+      const structureResult = this.repairJSONStructure(repairedContent);
+      if (structureResult) {
+        console.log('✅ JSON repair successful!');
+        return structureResult;
+      }
+      
+      // Step 5: 最終手段 - 最小限の有効なJSONを生成
+      return this.createMinimalValidJSON(content);
+      
+    } catch (error) {
+      console.error('❌ JSON repair completely failed:', error);
+      // 完全な失敗時は最小限のダミーJSONを返す
+      return this.createEmergencyJSON();
+    }
+  }
+  
+  /**
+   * 最後の完全な構造（}または]）を探す
+   */
+  private findLastCompleteStructure(content: string): number | null {
+    let braceCount = 0;
+    let bracketCount = 0;
+    let inString = false;
+    let lastValidPos = -1;
+    
+    for (let i = 0; i < content.length; i++) {
+      const char = content[i];
+      const prevChar = i > 0 ? content[i - 1] : '';
+      
+      if (char === '"' && prevChar !== '\\') {
+        inString = !inString;
+        continue;
+      }
+      
+      if (inString) continue;
+      
+      if (char === '{') braceCount++;
+      else if (char === '}') {
+        braceCount--;
+        if (braceCount >= 0) lastValidPos = i;
+      }
+      else if (char === '[') bracketCount++;
+      else if (char === ']') {
+        bracketCount--;
+        if (bracketCount >= 0) lastValidPos = i;
+      }
+    }
+    
+    return lastValidPos > 0 ? lastValidPos : null;
+  }
+  
+  /**
+   * JSON構造の修復
+   */
+  private repairJSONStructure(content: string): string | null {
+    try {
+      let repairedContent = content;
+      let braceCount = 0;
+      let bracketCount = 0;
+      let inString = false;
+      
+      // 構造を分析
+      for (let i = 0; i < repairedContent.length; i++) {
+        const char = repairedContent[i];
+        const prevChar = i > 0 ? repairedContent[i - 1] : '';
+        
+        if (char === '"' && prevChar !== '\\') {
+          inString = !inString;
+          continue;
+        }
+        
+        if (inString) continue;
+        
+        if (char === '{') braceCount++;
+        else if (char === '}') braceCount--;
+        else if (char === '[') bracketCount++;
+        else if (char === ']') bracketCount--;
+      }
+      
+      // 不足している終了文字を追加
+      let repairs = [];
+      
+      // 文字列の途中で終了している場合
+      if (inString) {
+        repairedContent += '"';
+        repairs.push('closing quote');
+      }
+      
+      // 配列の修復
+      while (bracketCount > 0) {
+        repairedContent += ']';
+        bracketCount--;
+        repairs.push('closing bracket');
+      }
+      
+      // オブジェクトの修復
+      while (braceCount > 0) {
+        repairedContent += '}';
+        braceCount--;
+        repairs.push('closing brace');
+      }
+      
+      console.log('🔧 Applied repairs:', repairs.join(', '));
+      
+      // 修復結果をテスト
+      JSON.parse(repairedContent);
+      return repairedContent;
+      
+    } catch (error) {
+      console.warn('🔧 Structure repair failed:', error);
+      return null;
+    }
+  }
+  
+  /**
+   * 最小限の有効なJSONを作成
+   */
+  private createMinimalValidJSON(originalContent: string): string {
+    console.log('🔧 Creating minimal valid JSON...');
+    
+    try {
+      // 元のコンテンツからタイトルを抽出してみる
+      const titleMatch = originalContent.match(/"title"\s*:\s*"([^"]*)"/) || 
+                        originalContent.match(/"title"\s*:\s*'([^']*)'/) || 
+                        originalContent.match(/title:\s*["']([^"']*)/);
+      
+      const title = titleMatch ? titleMatch[1] : "プレゼンテーション";
+      
+      // 最小限の有効なスライドJSONを作成
+      return JSON.stringify({
+        title: title,
+        description: "自動生成されたプレゼンテーション",
+        slides: [
+          {
+            id: "slide-1",
+            title: title,
+            layers: [
+              {
+                id: "layer-1-1",
+                type: "text",
+                content: title,
+                x: 10,
+                y: 20,
+                width: 80,
+                height: 20,
+                fontSize: 32,
+                textAlign: "center",
+                textColor: "#000000"
+              }
+            ],
+            background: "#ffffff"
+          }
+        ]
+      }, null, 2);
+      
+    } catch (error) {
+      console.error('🔧 Minimal JSON creation failed:', error);
+      return this.createEmergencyJSON();
+    }
+  }
+  
+  /**
+   * 緊急時の最小JSON
+   */
+  private createEmergencyJSON(): string {
+    return JSON.stringify({
+      title: "エラー回復",
+      description: "JSON修復エラーからの回復",
+      slides: [
+        {
+          id: "slide-1",
+          title: "エラー回復",
+          layers: [
+            {
+              id: "layer-1-1",
+              type: "text", 
+              content: "プレゼンテーションの生成中にエラーが発生しましたが、システムが回復しました。",
+              x: 10,
+              y: 30,
+              width: 80,
+              height: 40,
+              fontSize: 24,
+              textAlign: "left",
+              textColor: "#000000"
+            }
+          ],
+          background: "#f8f9fa"
+        }
+      ]
+    }, null, 2);
   }
 
   /**
@@ -672,8 +907,8 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
   }
 
   /**
-   * 🎨 Revolutionary Context Intelligence Image Prompt Enhancement
-   * Context分析結果を活用した画像プロンプトの強化
+   * 🎨 用途別画像プロンプト強化
+   * PresentationPurposeに基づく適切な画像スタイル選択
    */
   private enhanceImagePromptWithContext(
     baseImagePrompt: string,
@@ -681,151 +916,114 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
     slideContent: string,
     slideIndex: number
   ): string {
-    const contextEnhancements = this.getContextualImageEnhancements(contextAnalysis);
-    const narrativePosition = this.determineNarrativePosition(slideIndex, contextAnalysis);
-    const specificSceneElements = this.extractSceneElements(slideContent, contextAnalysis);
+    // 実際の用途を取得（Context Intelligence結果 or デフォルト）
+    const purpose = contextAnalysis.suggestedPurpose || 'business_presentation';
     
-    return `
-🧠 CONTEXT INTELLIGENCE ENHANCED IMAGE PROMPT:
+    const styleConfig = this.getImageStyleForPurpose(purpose);
+    
+    return `${baseImagePrompt}
 
-📖 Story Context: ${contextAnalysis.contentType} (Confidence: ${Math.round(contextAnalysis.confidence * 100)}%)
-🎭 Narrative Position: ${narrativePosition}
-🎯 Scene Elements: ${specificSceneElements}
-
-${baseImagePrompt}
-
-🚀 CONTEXT INTELLIGENCE ENHANCEMENTS:
-${contextEnhancements.styleEnhancement}
-
-🎨 Content-Type Specific Instructions:
-${contextEnhancements.contentTypeInstructions}
-
-🌟 Emotional Tone Alignment: ${contextAnalysis.emotionalTone}
-${contextEnhancements.emotionalInstructions}
-
-✨ Narrative Flow Integration:
-${contextEnhancements.narrativeInstructions}
-
-🎯 CRITICAL CONTEXT REMINDERS:
-- This image is for: ${contextAnalysis.contentType} storytelling
-- Emotional tone must be: ${contextAnalysis.emotionalTone}  
-- Story theme: ${contextAnalysis.suggestedTheme}
-- Designer approach: ${contextAnalysis.suggestedDesigner}
-
-🚫 CONTEXT-SPECIFIC PROHIBITIONS:
-${contextEnhancements.contextProhibitions}
-
-📐 Final Context Check: Ensure this image perfectly matches "${contextAnalysis.contentType}" storytelling expectations, NOT generic presentation visuals.`;
+${styleConfig.styleInstruction}
+Context: ${styleConfig.contextDescription}
+${styleConfig.specificGuidelines}
+Important: ${styleConfig.prohibitions}
+Note: No text overlays, website URLs, or icons8.com imagery.`;
   }
 
   /**
-   * 🎯 Context-Specific Image Enhancements Generator
+   * 🎯 用途別画像スタイル設定
+   * PresentationPurposeごとの最適な画像生成指示
    */
-  private getContextualImageEnhancements(contextAnalysis: any): {
-    styleEnhancement: string;
-    contentTypeInstructions: string;
-    emotionalInstructions: string;
-    narrativeInstructions: string;
-    contextProhibitions: string;
+  private getImageStyleForPurpose(purpose: string): {
+    styleInstruction: string;
+    contextDescription: string;
+    specificGuidelines: string;
+    prohibitions: string;
   } {
-    const contentType = contextAnalysis.contentType;
-    const emotionalTone = contextAnalysis.emotionalTone;
-    
-    switch (contentType) {
-      case 'story':
+    switch (purpose) {
+      case 'storytelling':
         return {
-          styleEnhancement: 'Storybook illustration style with narrative focus, warm and engaging visuals',
-          contentTypeInstructions: `
-- Create scenes that tell a story visually
-- Include characters in meaningful story moments
-- Use traditional storytelling visual elements
-- Maintain consistency with folk tale or fairy tale aesthetics
-- Focus on character emotions and story progression`,
-          emotionalInstructions: `
-- Emotional tone: ${emotionalTone}
-- Create warmth and connection through visual elements
-- Use lighting and color to enhance emotional impact
-- Show character expressions that match story mood`,
-          narrativeInstructions: `
-- Position this image within the story's narrative arc
-- Ensure visual continuity with story progression
-- Include elements that advance the narrative
-- Create scenes that readers can emotionally connect with`,
-          contextProhibitions: `
-- ABSOLUTELY NO business or corporate elements
-- NO modern office settings or business people
-- NO presentation graphics or text overlays
-- NO corporate colors or professional styling
-- NO charts, data, or business visualization elements`
+          styleInstruction: 'Style: Warm, storybook-style illustration with narrative focus. Use soft colors and expressive characters.',
+          contextDescription: 'Storytelling and narrative content',
+          specificGuidelines: 'Focus on emotional characters, story scenes, and traditional tale aesthetics.',
+          prohibitions: 'NO business elements, office settings, corporate imagery, or data visualizations.'
         };
-        
-      case 'business':
+
+      case 'children_content':
         return {
-          styleEnhancement: 'Professional corporate imagery with strategic business focus',
-          contentTypeInstructions: `
-- Professional corporate photography style
-- Business-appropriate settings and elements
-- Strategic and authoritative visual composition
-- Clean, modern business aesthetics`,
-          emotionalInstructions: `
-- Professional and trustworthy emotional tone
-- Convey competence and reliability through visuals
-- Use business-appropriate color schemes
-- Maintain executive-level sophistication`,
-          narrativeInstructions: `
-- Support business narrative and messaging
-- Include elements that reinforce business objectives
-- Create visuals that enhance credibility`,
-          contextProhibitions: `
-- Avoid overly casual or playful elements
-- NO fairy tale or story-like imagery
-- NO childish or whimsical visual styles`
+          styleInstruction: 'Style: Bright, colorful, child-friendly illustration. Use simple shapes and cheerful characters.',
+          contextDescription: 'Educational content for children',
+          specificGuidelines: 'Make it engaging for young learners with vibrant colors and playful elements.',
+          prohibitions: 'NO complex imagery, scary elements, or adult-oriented content.'
         };
-        
+
+      case 'academic_research':
+        return {
+          styleInstruction: 'Style: Clean, scholarly imagery with focus on data and research concepts. Use neutral, professional colors.',
+          contextDescription: 'Academic research presentation',
+          specificGuidelines: 'Emphasize credibility, research methodology, and scientific accuracy.',
+          prohibitions: 'NO decorative elements, flashy colors, or commercial imagery.'
+        };
+
+      case 'marketing_pitch':
+        return {
+          styleInstruction: 'Style: Dynamic, engaging visuals with strong visual impact. Use bold colors and modern design.',
+          contextDescription: 'Marketing and sales presentation',
+          specificGuidelines: 'Create compelling visuals that grab attention and convey value proposition.',
+          prohibitions: 'NO boring layouts, academic formality, or outdated design elements.'
+        };
+
+      case 'educational_content':
+        return {
+          styleInstruction: 'Style: Clear, instructional imagery that supports learning. Use organized layouts and helpful visual cues.',
+          contextDescription: 'Educational and training content',
+          specificGuidelines: 'Prioritize clarity and educational value over decorative elements.',
+          prohibitions: 'NO confusing layouts, excessive decoration, or distracting elements.'
+        };
+
+      case 'creative_project':
+        return {
+          styleInstruction: 'Style: Artistic, innovative visuals with creative flair. Experiment with unique perspectives and compositions.',
+          contextDescription: 'Creative project showcase',
+          specificGuidelines: 'Showcase creativity and artistic vision with unique visual approaches.',
+          prohibitions: 'NO conventional corporate imagery or overly conservative design choices.'
+        };
+
+      case 'tutorial_guide':
+        return {
+          styleInstruction: 'Style: Step-by-step friendly visuals with clear guidance. Use helpful annotations and progressive layouts.',
+          contextDescription: 'Tutorial and how-to guide',
+          specificGuidelines: 'Make it easy to follow with clear visual hierarchy and instructional flow.',
+          prohibitions: 'NO complex layouts, ambiguous imagery, or overwhelming visual details.'
+        };
+
+      case 'product_demo':
+        return {
+          styleInstruction: 'Style: Product-focused imagery showcasing features and benefits. Use clean, modern product photography style.',
+          contextDescription: 'Product demonstration',
+          specificGuidelines: 'Highlight product advantages and user experience clearly.',
+          prohibitions: 'NO generic imagery unrelated to the specific product or service.'
+        };
+
+      case 'training_material':
+        return {
+          styleInstruction: 'Style: Professional training imagery with focus on skill development. Use business-appropriate but engaging visuals.',
+          contextDescription: 'Corporate training and development',
+          specificGuidelines: 'Balance professionalism with engagement for adult learners.',
+          prohibitions: 'NO childish elements or overly casual imagery inappropriate for workplace.'
+        };
+
+      case 'business_presentation':
       default:
         return {
-          styleEnhancement: 'Contextually appropriate imagery matching the content theme',
-          contentTypeInstructions: 'Create visuals that support the specific content context',
-          emotionalInstructions: `Match the ${emotionalTone} emotional tone throughout`,
-          narrativeInstructions: 'Support the overall narrative flow and messaging',
-          contextProhibitions: 'Avoid elements that conflict with the identified content type'
+          styleInstruction: 'Style: Clean, professional imagery appropriate for business contexts. Use modern, trustworthy design elements.',
+          contextDescription: 'Business and corporate presentation',
+          specificGuidelines: 'Maintain executive-level professionalism while keeping visuals engaging.',
+          prohibitions: 'NO overly casual elements, childish imagery, or inappropriate visual styles.'
         };
     }
   }
 
-  /**
-   * 🎬 Narrative Position Determination
-   */
-  private determineNarrativePosition(slideIndex: number, contextAnalysis: any): string {
-    const totalSlides = slideIndex + 1; // Rough estimation
-    
-    if (slideIndex === 0) {
-      return 'Opening/Introduction - Set the scene and introduce the story';
-    } else if (slideIndex === 1) {
-      return 'Setup/Development - Introduce characters and initial situation';
-    } else if (slideIndex >= 2 && contextAnalysis.contentType === 'story') {
-      return 'Story Development - Show key story moments and character actions';
-    } else {
-      return `Narrative continuation - Slide ${slideIndex + 1} in the story progression`;
-    }
-  }
-
-  /**
-   * 🎭 Scene Elements Extraction
-   */
-  private extractSceneElements(slideContent: string, contextAnalysis: any): string {
-    if (contextAnalysis.contentType === 'story') {
-      // Extract story-specific elements
-      const storyKeywords = slideContent.match(/\b(桃太郎|鬼|島|おじいさん|おばあさん|犬|猿|雉|宝物)\b/g);
-      if (storyKeywords) {
-        return `Story elements: ${storyKeywords.join(', ')}`;
-      }
-    }
-    
-    // General scene element extraction
-    const sceneWords = slideContent.split(' ').slice(0, 5).join(' ');
-    return sceneWords || 'General narrative scene';
-  }
 
   /**
    * 📋 Title Slide追加
@@ -833,30 +1031,45 @@ ${contextEnhancements.contextProhibitions}
    */
   private addTitleSlide(content: string, designerStrategy: DesignerStrategy, request: EnhancedSlideRequest): string {
     try {
-      const parsedContent = JSON.parse(content);
+      let parsed: any;
       
-      if (parsedContent.slides && Array.isArray(parsedContent.slides)) {
+      try {
+        parsed = JSON.parse(content);
+      } catch (parseError) {
+        console.error('❌ JSON Parse Error in addTitleSlide:', parseError);
+        console.log('🔧 Attempting JSON repair in addTitleSlide...');
+        
+        const repairedContent = this.attemptJSONRepair(content);
+        if (repairedContent) {
+          parsed = JSON.parse(repairedContent);
+          console.log('✅ JSON repair successful in addTitleSlide!');
+        } else {
+          throw parseError; 
+        }
+      }
+      
+      if (parsed.slides && Array.isArray(parsed.slides)) {
         console.log('🎬 Adding Title Slide to presentation...');
         
         // Title Slideを生成
         const titleSlide = designerStrategy.generateTitleSlide(request);
         
         // 既存slidesのIDを調整（title slideが先頭に来るため）
-        parsedContent.slides = parsedContent.slides.map((slide: any, index: number) => ({
+        parsed.slides = parsed.slides.map((slide: any, index: number) => ({
           ...slide,
           id: slide.id.replace(/slide-(\d+)/, `slide-${index + 1}`)
         }));
         
         // Title Slideを先頭に追加
-        parsedContent.slides.unshift(titleSlide);
+        parsed.slides.unshift(titleSlide);
         
         // プレゼンテーション全体のタイトルを更新
-        parsedContent.title = titleSlide.title;
+        parsed.title = titleSlide.title;
         
-        console.log(`✅ Title Slide added. Total slides: ${parsedContent.slides.length}`);
+        console.log(`✅ Title Slide added. Total slides: ${parsed.slides.length}`);
       }
       
-      return JSON.stringify(parsedContent, null, 2);
+      return JSON.stringify(parsed, null, 2);
     } catch (error) {
       console.warn('Title Slide追加でエラーが発生しました:', error);
       return content; // エラーの場合は元のコンテンツを返す

@@ -52,7 +52,7 @@ export class AzureOpenAIClient {
         { role: 'user', content: request.prompt }
       ],
       temperature: request.temperature ?? 0.7,
-      max_tokens: request.maxTokens ?? 4096,
+      max_tokens: request.maxTokens ?? 8000,
       top_p: request.topP,
       frequency_penalty: request.frequencyPenalty,
       presence_penalty: request.presencePenalty,
@@ -164,7 +164,7 @@ export class AzureOpenAIClient {
           { type: 'image_url', image_url: { url: request.videoData, detail: 'high' } }
         ]
       }],
-      max_tokens: request.maxTokens ?? 4096,
+      max_tokens: request.maxTokens ?? 8000,
       temperature: request.temperature ?? 0.7
     };
 

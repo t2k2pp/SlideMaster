@@ -12,20 +12,108 @@ import type {
   PresentationTheme,
   DesignerType
 } from '../../types';
+import { MarpContentService, type MarpContentOptions, type MarpPresentation } from './MarpContentService';
+import { MarpLayoutService, type LayoutOptions, type JSONPresentation } from './MarpLayoutService';
+import { getTextAIService } from './unifiedAIService';
 
 /**
  * デザイナー戦略の基底抽象クラス
  * 全てのデザイナー戦略が継承する共通機能を提供
+ * 新機能：Marp→JSON二段階処理によるトークン最適化
  */
 export abstract class BaseDesignerStrategy implements DesignerStrategy {
   abstract readonly designerId: DesignerType;
   abstract readonly designerName: string;
+  
+  // Marp→JSON二段階処理サービス
+  protected marpContentService = new MarpContentService();
+  protected marpLayoutService = new MarpLayoutService();
 
   /**
    * コンテンツ生成用プロンプトの構築
    * デザイナーの特性を反映したプロンプトを生成
    */
   abstract buildContentPrompt(request: EnhancedSlideRequest): string;
+  
+  /**
+   * 🆕 Marp→JSON二段階スライド生成（推奨メソッド）
+   * Step1: Marpコンテンツ生成 → Step2: JSONレイアウト生成
+   * トークン数を大幅削減し、安定した品質を実現
+   */
+  async generateSlidesWithMarpApproach(request: EnhancedSlideRequest): Promise<string> {
+    console.log('🎯 Starting Marp→JSON two-phase slide generation');
+    console.log('📋 Request details:', {
+      topic: request.topic,
+      slideCount: request.slideCount,
+      designer: request.designer,
+      theme: request.theme,
+      purpose: request.purpose
+    });
+    
+    try {
+      // Phase 1: Marpコンテンツ生成
+      const marpOptions = MarpContentService.fromEnhancedRequest(request);
+      const marpPrompt = this.marpContentService.buildMarpPrompt(marpOptions);
+      
+      console.log('📝 Phase 1: Generating Marp content...');
+      console.log('🎨 Designer-specific Marp prompt length:', marpPrompt.length);
+      
+      const aiService = getTextAIService();
+      const marpResponse = await aiService.generateText(marpPrompt, {
+        temperature: 0.7,
+        maxTokens: 8192
+      });
+      
+      console.log('✅ Phase 1 completed: Marp content generated');
+      console.log('📊 Marp response length:', marpResponse.length);
+      
+      // Marp応答をパース
+      const marpPresentation = this.marpContentService.parseMarpResponse(marpResponse);
+      console.log('🔍 Parsed Marp presentation:', {
+        title: marpPresentation.title,
+        slideCount: marpPresentation.slides.length,
+        hasImages: marpPresentation.slides.some(s => s.imagePrompt)
+      });
+      
+      // Phase 2: JSONレイアウト生成
+      const layoutOptions = MarpLayoutService.fromEnhancedRequest(request);
+      const layoutPrompt = this.marpLayoutService.buildLayoutPrompt(marpPresentation, layoutOptions);
+      
+      console.log('🎨 Phase 2: Generating JSON layout...');
+      console.log('🎨 Layout prompt length:', layoutPrompt.length);
+      
+      const jsonResponse = await aiService.generateText(layoutPrompt, {
+        temperature: 0.5, // レイアウトは一貫性重視
+        maxTokens: 8192
+      });
+      
+      console.log('✅ Phase 2 completed: JSON layout generated');
+      console.log('📊 JSON response length:', jsonResponse.length);
+      
+      // JSONレスポンスを検証・パース
+      const jsonPresentation = this.marpLayoutService.parseLayoutResponse(jsonResponse);
+      
+      // 最終的なJSONを文字列として返す
+      const finalJson = JSON.stringify(jsonPresentation);
+      console.log('🏁 Marp→JSON two-phase generation completed successfully');
+      console.log('📊 Final JSON length:', finalJson.length);
+      
+      return finalJson;
+      
+    } catch (error) {
+      console.error('❌ Marp→JSON generation failed:', error);
+      
+      // フォールバック: 従来の一段階生成
+      console.log('🔄 Falling back to traditional single-phase generation...');
+      const fallbackPrompt = this.buildContentPrompt(request);
+      const aiService = getTextAIService();
+      
+      return await aiService.generateText(fallbackPrompt, {
+        temperature: 0.7,
+        maxTokens: 8192
+      });
+    }
+  }
 
   /**
    * 画像生成用プロンプトの構築
@@ -49,22 +137,119 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
    */
   postProcessContent(rawContent: string, request: EnhancedSlideRequest): string {
     try {
-      // JSONパースしてnotesを追加
+      // JSONパースしてnotesを追加＋動的フォントサイズ適用
       const parsedContent = JSON.parse(rawContent);
       if (parsedContent.slides && Array.isArray(parsedContent.slides)) {
+        
+        // コンテンツタイプを推定
+        const contentType = this.detectContentType(request);
+        console.log('🔤 Applying dynamic font sizing with context:', contentType);
+        
         parsedContent.slides = parsedContent.slides.map((slide: any, index: number) => {
-          // 既存のnotesが空の場合のみ生成
+          // 1. Speaker Notes生成
           if (!slide.notes || slide.notes.trim() === '') {
             slide.notes = this.generateSpeakerNotes(slide, index, request);
           }
+          
+          // 2. 動的フォントサイズ適用
+          if (slide.layers && Array.isArray(slide.layers)) {
+            slide.layers = slide.layers.map((layer: any) => {
+              if (layer.type === 'text' && layer.content) {
+                const textType = this.detectTextType(layer, slide, index);
+                const optimizedFontSize = this.calculateOptimalFontSize(
+                  layer.content,
+                  layer.width || 80,
+                  layer.height || 20,
+                  textType,
+                  contentType
+                );
+                
+                console.log(`🎯 Font size optimized: ${layer.fontSize || 'unset'} → ${optimizedFontSize}px for ${textType}`);
+                layer.fontSize = optimizedFontSize;
+              }
+              return layer;
+            });
+          }
+          
           return slide;
         });
       }
       return JSON.stringify(parsedContent, null, 2);
     } catch (error) {
-      // JSONパースエラーの場合は元のコンテンツを返す
+      console.error('⚠️ Post-processing error:', error);
       return rawContent;
     }
+  }
+
+  /**
+   * 🎯 コンテンツタイプ検出
+   * PresentationPurposeから適切なコンテンツタイプを推定
+   */
+  private detectContentType(request: EnhancedSlideRequest): 'story' | 'business' | 'academic' | 'technical' {
+    const purpose = request.purpose;
+    
+    // PresentationPurposeに基づく正確なマッピング
+    switch (purpose) {
+      // ストーリー系
+      case 'storytelling':
+      case 'children_content':
+      case 'creative_project':
+        return 'story';
+      
+      // 学術系
+      case 'academic_research':
+      case 'educational_content':
+      case 'training_material':
+        return 'academic';
+      
+      // 技術系
+      case 'tutorial_guide':
+      case 'product_demo':
+        return 'technical';
+      
+      // ビジネス系（デフォルト）
+      case 'business_presentation':
+      case 'marketing_pitch':
+      case 'portfolio_showcase':
+      case 'event_announcement':
+      case 'report_summary':
+      case 'game_content':
+      case 'digital_signage':
+      case 'video_storyboard':
+      default:
+        return 'business';
+    }
+  }
+
+  /**
+   * 🎯 テキストタイプ検出
+   * レイヤーの位置・内容からテキストの役割を推定
+   */
+  private detectTextType(layer: any, slide: any, slideIndex: number): 'title' | 'subtitle' | 'body' | 'caption' {
+    const content = layer.content || '';
+    const y = layer.y || 0;
+    const height = layer.height || 20;
+    const fontSize = layer.fontSize || 32;
+    
+    // スライドタイトルの場合
+    if (slideIndex === 0 && y < 30 && fontSize > 40) {
+      return 'title';
+    }
+    
+    // 位置とサイズベースの判定
+    if (y < 25 && (fontSize > 35 || content.length < 50)) {
+      return 'title';
+    }
+    
+    if (y < 40 && y >= 25 && fontSize > 30) {
+      return 'subtitle';
+    }
+    
+    if (y > 80 || height < 15 || fontSize < 22) {
+      return 'caption';
+    }
+    
+    return 'body';
   }
 
   /**
@@ -343,33 +528,110 @@ ${this.extractMainTitle(request.topic)}についてのプレゼンテーショ�
   }
 
   /**
-   * 文章量に応じた適切なフォントサイズを計算
+   * 🔤 高度な動的フォントサイズ計算システム
+   * コンテンツ、レイアウト、役割を総合的に考慮した最適化
    */
-  protected calculateOptimalFontSize(content: string, layerWidth: number = 80, layerHeight: number = 20): number {
+  protected calculateOptimalFontSize(
+    content: string, 
+    layerWidth: number = 80, 
+    layerHeight: number = 20,
+    textType: 'title' | 'subtitle' | 'body' | 'caption' = 'body',
+    contextType: 'story' | 'business' | 'academic' | 'technical' = 'business'
+  ): number {
     const textLength = content.length;
-    const baseSize = 32; // 基本フォントサイズを大きく設定
-    const maxSize = 48;
-    const minSize = 20;
+    const wordsCount = content.split(/\s+/).length;
+    const hasLineBreaks = content.includes('\n');
     
-    // レイヤーサイズに基づく基本調整
-    const sizeByArea = Math.max(16, Math.min(40, (layerWidth * layerHeight) / 30));
-    
-    // 文章量に基づく調整
-    let sizeByLength: number;
-    if (textLength < 30) {
-      sizeByLength = maxSize; // 短文は大きく
-    } else if (textLength < 80) {
-      sizeByLength = baseSize; // 中程度
-    } else if (textLength < 150) {
-      sizeByLength = 28; // やや小さく
+    console.log(`🔤 Calculating font size for ${textType}:`, {
+      textLength,
+      wordsCount,
+      hasLineBreaks,
+      layerArea: layerWidth * layerHeight,
+      contextType
+    });
+
+    // 1. 基本サイズ設定（役割別）
+    const baseSizes = {
+      title: { max: 56, base: 42, min: 32 },
+      subtitle: { max: 48, base: 36, min: 26 },
+      body: { max: 40, base: 28, min: 20 },
+      caption: { max: 28, base: 20, min: 16 }
+    };
+
+    const sizeConfig = baseSizes[textType];
+
+    // 2. コンテキスト別調整係数
+    const contextMultipliers = {
+      story: { title: 1.1, subtitle: 1.05, body: 1.0, caption: 0.95 }, // ストーリーは読みやすく
+      business: { title: 1.0, subtitle: 1.0, body: 1.0, caption: 1.0 }, // 標準
+      academic: { title: 0.95, subtitle: 0.95, body: 0.9, caption: 0.9 }, // 学術的は情報密度高め
+      technical: { title: 0.9, subtitle: 0.9, body: 0.85, caption: 0.85 } // 技術資料は詳細重視
+    };
+
+    const contextMultiplier = contextMultipliers[contextType][textType];
+
+    // 3. レイアウトエリアに基づく調整
+    const layerArea = layerWidth * layerHeight;
+    const areaFactor = Math.min(1.2, Math.max(0.7, layerArea / 1600)); // 1600 = 80*20 (標準サイズ)
+
+    // 4. 文章量による段階的調整
+    let lengthFactor: number;
+    if (textLength <= 20) {
+      lengthFactor = 1.3; // 極短文は大きく（キャッチフレーズ等）
+    } else if (textLength <= 50) {
+      lengthFactor = 1.1; // 短文は少し大きく
+    } else if (textLength <= 100) {
+      lengthFactor = 1.0; // 標準
+    } else if (textLength <= 200) {
+      lengthFactor = 0.9; // 中文は少し小さく
+    } else if (textLength <= 350) {
+      lengthFactor = 0.8; // 長文は小さく
     } else {
-      sizeByLength = minSize; // 長文は小さく
+      lengthFactor = 0.7; // 極長文はかなり小さく
     }
-    
-    // 両方の要素を考慮した最終サイズ
-    const finalSize = Math.min(Math.max(minSize, (sizeByArea + sizeByLength) / 2), maxSize);
-    
-    return Math.round(finalSize);
+
+    // 5. 改行の存在による調整
+    const lineBreakFactor = hasLineBreaks ? 0.95 : 1.0;
+
+    // 6. 単語密度による調整（日本語では参考値）
+    const wordDensityFactor = wordsCount > 0 ? Math.max(0.8, Math.min(1.1, 50 / wordsCount)) : 1.0;
+
+    // 7. 最終計算
+    const calculatedSize = 
+      sizeConfig.base * 
+      contextMultiplier * 
+      areaFactor * 
+      lengthFactor * 
+      lineBreakFactor * 
+      wordDensityFactor;
+
+    // 8. 範囲制限と丸め
+    const finalSize = Math.round(
+      Math.min(sizeConfig.max, Math.max(sizeConfig.min, calculatedSize))
+    );
+
+    console.log(`✅ Font size calculated: ${finalSize}px`, {
+      originalBase: sizeConfig.base,
+      factors: {
+        context: contextMultiplier,
+        area: areaFactor,
+        length: lengthFactor,
+        lineBreak: lineBreakFactor,
+        wordDensity: wordDensityFactor
+      },
+      calculated: calculatedSize,
+      final: finalSize
+    });
+
+    return finalSize;
+  }
+
+  /**
+   * 🎯 レガシー互換性維持のための旧メソッド
+   * 既存コードとの互換性を保つ
+   */
+  protected calculateDynamicFontSize(content: string, layerWidth: number = 80, layerHeight: number = 20): number {
+    return this.calculateOptimalFontSize(content, layerWidth, layerHeight, 'body', 'business');
   }
 
   /**
@@ -378,7 +640,7 @@ ${this.extractMainTitle(request.topic)}についてのプレゼンテーショ�
   protected getJsonStructureInstructions(request?: any): string {
     const aspectRatio = request?.aspectRatio || '16:9'; // デフォルトは16:9
     return `
-結果はJSON形式で以下の構造で出力してください：
+結果は**Minified JSON形式（スペース・改行・インデントなし）**で以下の構造で出力してください。トークン数節約のため、整形は不要です：
 {
   "title": "プレゼンテーションタイトル",
   "description": "プレゼンテーションの説明",

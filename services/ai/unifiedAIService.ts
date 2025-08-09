@@ -101,11 +101,16 @@ class GeminiUnifiedService implements UnifiedAIService {
 
   async generateImage(prompt: string, options?: ImageGenerationOptions): Promise<string> {
     try {
+      const settings = getUserSettings();
+      const geminiAuth = settings.providerAuth?.gemini;
+      const modelName = geminiAuth?.imageGeneration?.modelName || 'imagen-3.0-generate-002';
+      
       return await this.imageService.generateImage({
         prompt,
         size: options?.size || 'square',
         quality: options?.quality || 'medium',
         style: options?.style,
+        modelName: modelName,
       });
     } catch (error) {
       throw new AIServiceError(
@@ -133,7 +138,7 @@ class GeminiUnifiedService implements UnifiedAIService {
           prompt: enhancedOptions.enhancedPrompt,
           systemPrompt: 'あなたは優秀なプレゼンテーションデザイナーです。指定された形式でスライドコンテンツを生成してください。',
           temperature: 0.7,
-          maxTokens: 4000
+          maxTokens: 8192
         });
         
         console.log('✅ GeminiUnifiedAIService: Enhanced prompt generation completed!');
@@ -154,6 +159,10 @@ class GeminiUnifiedService implements UnifiedAIService {
 
   async generateSlideImage(prompt: string, options?: SlideImageOptions): Promise<string> {
     try {
+      const settings = getUserSettings();
+      const geminiAuth = settings.providerAuth?.gemini;
+      const modelName = geminiAuth?.imageGeneration?.modelName || 'imagen-3.0-generate-002';
+      
       return await this.imageService.generateSlideImage({
         prompt,
         size: options?.size || 'landscape',
@@ -162,6 +171,7 @@ class GeminiUnifiedService implements UnifiedAIService {
         slideTitle: options?.slideTitle,
         slideContent: options?.slideContent,
         imageType: options?.imageType,
+        modelName: modelName,
       });
     } catch (error) {
       throw new AIServiceError(
@@ -294,7 +304,7 @@ class AzureUnifiedService implements UnifiedAIService {
           prompt: enhancedOptions.enhancedPrompt,
           systemPrompt: 'あなたは優秀なプレゼンテーションデザイナーです。指定された形式でスライドコンテンツを生成してください。',
           temperature: 0.7,
-          maxTokens: 4000
+          maxTokens: 8192
         });
         
         console.log('✅ UnifiedAIService: Enhanced prompt generation completed!');
@@ -636,7 +646,7 @@ export async function generateSlidesFromVideo(
 - 主要なポイント（3-5個）
 - 簡潔で分かりやすい説明
 
-JSON形式で以下の構造で出力してください：
+**Minified JSON形式（スペース・改行なし）**で以下の構造で出力してください。トークン数節約が重要です：
 {
   "title": "プレゼンテーションタイトル",
   "slides": [

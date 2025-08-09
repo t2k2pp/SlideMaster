@@ -198,7 +198,7 @@ export class ContextIntelligenceEngine {
         const aiService = getTextAIService();
         
         const response = await aiService.generateText(prompt, {
-          maxTokens: 20,
+          maxTokens: 8000,
           temperature: 0.1
         });
         
@@ -246,7 +246,7 @@ export class ContextIntelligenceEngine {
         const aiService = getTextAIService();
         
         const response = await aiService.generateText(prompt, {
-          maxTokens: 30,
+          maxTokens: 8000,
           temperature: 0.1
         });
         
@@ -277,24 +277,33 @@ export class ContextIntelligenceEngine {
       try {
         console.log(`🎯 Purpose Selection - Attempt ${attempt}/${maxRetries}`);
         
-        const prompt = `コンテンツタイプ"${contentType}"の以下のトピックの用途を選択してください。
+        const prompt = `トピック「${topic}」に最も適した用途を選択してください。
 
-トピック: "${topic}"
+利用可能な用途:
+- business_presentation: ビジネス・企業向けプレゼンテーション
+- educational_content: 教育・学習コンテンツ  
+- storytelling: ストーリーテリング・物語
+- children_content: 子供向けコンテンツ
+- tutorial_guide: チュートリアル・ガイド
+- portfolio_showcase: ポートフォリオ・作品紹介
+- marketing_pitch: マーケティング・営業資料
+- academic_research: 学術・研究発表
+- event_announcement: イベント・告知
+- training_material: 研修・トレーニング資料
+- product_demo: 製品・サービスデモ
+- report_summary: レポート・報告書
+- creative_project: クリエイティブプロジェクト
+- game_content: ゲーム・インタラクティブコンテンツ
+- digital_signage: デジタルサイネージ
+- video_storyboard: 動画制作用ストーリーボード
 
-選択肢:
-- "ストーリーテリング・物語の共有": 物語系
-- "ビジネス・企業プレゼンテーション": ビジネス系
-- "技術説明・エンジニアリング": AI・技術系
-- "教育・学習支援": 学術・教育系
-- "クリエイティブ・芸術表現": 創作系
-
-回答形式: 用途名をそのまま日本語で回答（例: 技術説明・エンジニアリング）`;
+回答形式: 選択肢から1つ選んでキー名のみを回答してください（例: storytelling）`;
 
         const { getTextAIService } = await import('./unifiedAIService');
         const aiService = getTextAIService();
         
         const response = await aiService.generateText(prompt, {
-          maxTokens: 50,
+          maxTokens: 8000,
           temperature: 0.1
         });
         
@@ -321,24 +330,33 @@ export class ContextIntelligenceEngine {
       try {
         console.log(`🎭 Theme Selection - Attempt ${attempt}/${maxRetries}`);
         
-        const prompt = `コンテンツタイプ"${contentType}"の以下のトピックのテーマを選択してください。
+        const prompt = `トピック「${topic}」に最も適したテーマを選択してください。
 
-トピック: "${topic}"
+主要なテーマ選択肢:
+- professional: プロフェッショナル・標準的
+- creative: クリエイティブ・芸術的
+- minimalist: ミニマル・シンプル
+- storytelling: ストーリーテリング・物語風
+- academic: 学術・教育的
+- playful: 楽しい・親しみやすい
+- children_bright: 子供向け・明るい色調
+- children_pastel: 子供向け・パステル調
+- tech_modern: 技術・モダン
+- elegant_luxury: エレガント・高級感
+- warm_friendly: 温かい・親しみやすい
+- bold_impact: 大胆・インパクト重視
+- traditional_japanese: 日本の伝統的
+- hand_drawn: 手描き風
+- medical: 医療・ヘルスケア
+- dark_modern: ダークモダン
 
-選択肢:
-- storytelling: 物語・感動系
-- corporate: ビジネス・企業系
-- technical: 技術・論理系  
-- academic: 学術・教育系
-- creative: 芸術・創作系
-
-回答形式: テーマ名のみを英語で回答（例: technical）`;
+回答形式: 選択肢から1つ選んでキー名のみを回答してください（例: storytelling）`;
 
         const { getTextAIService } = await import('./unifiedAIService');
         const aiService = getTextAIService();
         
         const response = await aiService.generateText(prompt, {
-          maxTokens: 20,
+          maxTokens: 8000,
           temperature: 0.1
         });
         
@@ -393,7 +411,7 @@ export class ContextIntelligenceEngine {
         const aiService = getTextAIService();
         
         const response = await aiService.generateText(prompt, {
-          maxTokens: 100,
+          maxTokens: 8000,
           temperature: 0.1
         });
         
@@ -461,7 +479,7 @@ export class ContextIntelligenceEngine {
     const aiService = getTextAIService();
     
     const response = await aiService.generateText(analysisPrompt, {
-      maxTokens: 200,
+      maxTokens: 8000,
       temperature: 0.2 // 多少の創造性を許可
     });
     
@@ -479,7 +497,7 @@ export class ContextIntelligenceEngine {
     const aiService = getTextAIService();
     
     const response = await aiService.generateText(classificationPrompt, {
-      maxTokens: 50,
+      maxTokens: 8000,
       temperature: 0.1 // 一貫性重視
     });
     

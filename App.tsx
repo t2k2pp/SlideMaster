@@ -43,6 +43,7 @@ import * as exportService from './services/exportService';
 import { generateSlideContent, generateSlideImage, hasValidAPIKey } from './services/ai/unifiedAIService';
 import { ImageGenerationQueue, ImageGenerationTask } from './services/ai/imageGenerationQueue';
 import { slideGenerationFactory } from './services/ai/SlideGenerationFactory';
+import { processPresentationTopic } from './services/ai/PresentationTopicProcessor';
 
 // Import utilities
 import { updateAllPageNumbers } from './utils/pageNumbers';
@@ -608,9 +609,20 @@ const App: React.FC = () => {
     try {
       setIsProcessing(true);
       
+      // 🎯 トピック前処理：少量文章展開・大量文章構造化
+      console.log('🔍 Processing presentation topic...', request.topic);
+      const topicAnalysis = await processPresentationTopic(request.topic);
+      
+      console.log('✅ Topic processing completed:', {
+        contentType: topicAnalysis.contentType,
+        processingApplied: topicAnalysis.processingApplied,
+        originalLength: topicAnalysis.originalTopic.length,
+        processedLength: topicAnalysis.processedTopic.length
+      });
+      
       // SlideGenerationRequestをEnhancedSlideRequestに変換
       const enhancedRequest: EnhancedSlideRequest = {
-        topic: request.topic,
+        topic: topicAnalysis.processedTopic, // 前処理されたトピックを使用
         slideCount: request.slideCount,
         slideCountMode: request.slideCountMode || 'fixed',
         selectedDesigner: request.designer || request.selectedDesigner || undefined, // Context Intelligence Engineに任せる

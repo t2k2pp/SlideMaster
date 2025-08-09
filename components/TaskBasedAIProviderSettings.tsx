@@ -36,8 +36,13 @@ const MODEL_OPTIONS = {
       { value: 'o4-mini', label: 'o4-mini (推論モデル)' },
       { value: 'o1', label: 'o1 (推論モデル)' },
       { value: 'o1-mini', label: 'o1-mini (推論モデル)' },
+      // 最新のGPT-5.0シリーズ（2025年）
+      { value: 'gpt-5', label: 'GPT-5 (最新)' },
+      { value: 'gpt-5-mini', label: 'GPT-5-mini' },
+      { value: 'gpt-5-nano', label: 'GPT-5-nano' },
+      { value: 'gpt-5-chat', label: 'GPT-5-chat' },
       // 最新のGPT-4.1シリーズ（2025年）
-      { value: 'gpt-4.1', label: 'GPT-4.1 (最新・1Mトークン)' },
+      { value: 'gpt-4.1', label: 'GPT-4.1 (1Mトークン)' },
       { value: 'gpt-4.1-mini', label: 'GPT-4.1-mini' },
       { value: 'gpt-4.1-nano', label: 'GPT-4.1-nano' },
       // GPT-4oシリーズ
@@ -54,7 +59,8 @@ const MODEL_OPTIONS = {
     ],
     videoAnalysis: [
       { value: 'gpt-4o', label: 'GPT-4o' },
-      { value: 'gpt-4.1', label: 'GPT-4.1 (最新)' },
+      { value: 'gpt-5', label: 'GPT-5' },
+      { value: 'gpt-4.1', label: 'GPT-4.1' },
       { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
       { value: 'gpt-4', label: 'GPT-4' },
     ],
@@ -71,9 +77,9 @@ const MODEL_OPTIONS = {
       { value: 'gemini-pro', label: 'Gemini Pro (レガシー)' },
     ],
     imageGeneration: [
-      { value: 'imagen-3.0-generate', label: 'Imagen 3.0 (最新・高品質)' },
-      { value: 'imagen-3.0-fast-generate', label: 'Imagen 3.0 Fast' },
-      { value: 'imagen-2.0-generate', label: 'Imagen 2.0' },
+      { value: 'imagen-3.0-generate-002', label: 'Imagen 3.0 (最新・高品質)' },
+      { value: 'imagen-3.0-fast-generate-001', label: 'Imagen 3.0 Fast' },
+      { value: 'imagen-3.0-capability-001', label: 'Imagen 3.0 Capability' },
       { value: 'gemini-2.0-flash-preview-image-generation', label: 'Gemini 2.0 Flash Image Gen (プレビュー)' },
       { value: 'imagen-4.0-generate', label: 'Imagen 4.0 (実験的)' },
     ],
@@ -138,7 +144,7 @@ const TaskSetting: React.FC<TaskSettingProps> = React.memo(({
       if (provider === 'gemini') {
         const defaultGeminiModels = {
           textGeneration: 'gemini-2.5-flash',
-          imageGeneration: 'imagen-3.0-generate',
+          imageGeneration: 'imagen-3.0-generate-002',
           videoAnalysis: 'gemini-2.5-flash'
         };
         modelToUse = defaultGeminiModels[taskKey] || 'gemini-2.5-flash';

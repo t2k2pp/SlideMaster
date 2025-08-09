@@ -74,7 +74,7 @@ You must respond with a valid JSON object that represents a complete presentatio
 - width: 80 = スライド幅の80%
 - height: 30 = スライド高さの30%
 
-以下のJSON形式で必ず回答してください：
+**Minified JSON形式（スペース・改行なし）**で必ず回答してください。Azure OpenAI / Gemini共通でトークン数節約が重要です：
 {
   "title": "魅力的なプレゼンテーションタイトル",
   "description": "プレゼンテーションの概要説明",
@@ -178,13 +178,15 @@ You must respond with a valid JSON object that represents a complete presentatio
   * 上下分割: タイトル(y:5) + 画像(y:25) + テキスト(y:70)
   * 中央配置: タイトル(x:10, y:35, width:80)
 - 座標は必ず0-100の範囲で指定
+- **Minified JSON形式（スペース・改行なし）で出力すること**
+- トークン数節約のため整形不要
 - JSON形式以外は一切出力しないこと`;
 
     return this.generateText({
       prompt,
       systemPrompt,
       temperature: 0.8,
-      maxTokens: 4096
+      maxTokens: 8000
     });
   }
 
@@ -258,7 +260,7 @@ ${content}
       prompt,
       systemPrompt,
       temperature: 0.3,
-      maxTokens: 4096
+      maxTokens: 8000
     });
   }
 }

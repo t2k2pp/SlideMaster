@@ -149,7 +149,7 @@ ${characterConsistencyInstructions}
     const exampleContent = this.getStorytellingExample(storyType || 'folk_tale');
     
     return `
-結果はJSON形式で以下の構造で出力してください：
+結果は**Minified JSON形式（スペース・改行なし）**で以下の構造で出力してください。トークン数節約が重要です：
 
 🎭 **ストーリーテリング特化レイアウト例:**
 ${exampleContent}
