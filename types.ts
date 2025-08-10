@@ -79,7 +79,7 @@ export interface TextStyle {
   style: React.CSSProperties;
 }
 
-export type LayerType = 'text' | 'image' | 'shape';
+export type LayerType = 'text' | 'image' | 'shape' | 'svg';
 
 export interface BaseLayer {
   id: string;
@@ -124,7 +124,18 @@ export interface ShapeLayer extends BaseLayer {
   strokeWidth: number;
 }
 
-export type Layer = TextLayer | ImageLayer | ShapeLayer;
+export interface SVGLayer extends BaseLayer {
+  type: 'svg';
+  content: string; // SVG content as string
+  prompt: string; // AI generation prompt for SVG
+  viewBox?: string; // SVG viewBox attribute (e.g., "0 0 100 100")
+  preserveAspectRatio?: string; // SVG preserveAspectRatio attribute
+  fillColor?: string; // Override fill color
+  strokeColor?: string; // Override stroke color
+  strokeWidth?: number; // Override stroke width
+}
+
+export type Layer = TextLayer | ImageLayer | ShapeLayer | SVGLayer;
 
 // =================================================================
 // Slide System (enhanced from ai-slide-generator)

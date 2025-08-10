@@ -1,9 +1,10 @@
 import React, { useRef, useEffect, useState } from 'react';
 import Moveable from 'react-moveable';
-import { SlideCanvasProps, Layer, TextLayer, ImageLayer, ShapeLayer, ViewState } from '../types';
+import { SlideCanvasProps, Layer, TextLayer, ImageLayer, ShapeLayer, SVGLayer, ViewState } from '../types';
 import { CANVAS_SIZES, TEXT_STYLES } from '../constants';
-import { Image as ImageIcon, Square, Circle, Triangle, Minus, Layers, Grid3X3, Magnet } from 'lucide-react';
+import { Image as ImageIcon, Square, Circle, Triangle, Minus, Layers, Grid3X3, Magnet, Codepen } from 'lucide-react';
 import { MarkdownRenderer } from '../utils/markdownRenderer';
+import { SVGAddModal } from './SVGAddModal';
 
 // =================================================================
 // SlideCanvas Component - Main canvas for slide editing
@@ -42,6 +43,8 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
   
   // Shape selection dropdown state
   const [showShapeDropdown, setShowShapeDropdown] = useState(false);
+  // SVG modal state
+  const [showSVGModal, setShowSVGModal] = useState(false);
 
   // aspectRatioの値をチェック
   if (!CANVAS_SIZES[slide.aspectRatio]) {
@@ -751,6 +754,73 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
     );
   };
 
+  const renderSVGLayer = (layer: SVGLayer) => {
+    const style: React.CSSProperties = {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      width: `${(layer.width / 100) * canvasSize.width}px`,
+      height: `${(layer.height / 100) * canvasSize.height}px`,
+      transform: `translate(${(layer.x / 100) * canvasSize.width}px, ${(layer.y / 100) * canvasSize.height}px) rotate(${layer.rotation}deg)`,
+      opacity: layer.opacity,
+      zIndex: Math.max(layer.zIndex, 1),
+      cursor: 'pointer',
+    };
+
+    // SVG色のオーバーライド処理
+    let svgContent = layer.content;
+    if (layer.fillColor || layer.strokeColor) {
+      // 基本的な色の置き換え（より高度な処理も可能）
+      if (layer.fillColor) {
+        svgContent = svgContent.replace(/fill="[^"]*"/g, `fill="${layer.fillColor}"`);
+      }
+      if (layer.strokeColor) {
+        svgContent = svgContent.replace(/stroke="[^"]*"/g, `stroke="${layer.strokeColor}"`);
+      }
+      if (layer.strokeWidth !== undefined) {
+        svgContent = svgContent.replace(/stroke-width="[^"]*"/g, `stroke-width="${layer.strokeWidth}"`);
+      }
+    }
+
+    return (
+      <div
+        key={layer.id}
+        ref={el => el ? layerRefs.current.set(layer.id, el) : layerRefs.current.delete(layer.id)}
+        style={style}
+        className="layer svg-layer"
+        data-layer-id={layer.id}
+        onClick={() => handleLayerSelect(layer.id)}
+      >
+        <div 
+          dangerouslySetInnerHTML={{ __html: svgContent }}
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        />
+        {viewState.selectedLayerId === layer.id && (
+          <div 
+            className="layer-selection-indicator"
+            style={{
+              position: 'absolute',
+              top: '-2px',
+              left: '-2px',
+              right: '-2px',
+              bottom: '-2px',
+              border: '2px solid #3b82f6',
+              borderRadius: '4px',
+              pointerEvents: 'none',
+              zIndex: 9999,
+            }}
+          />
+        )}
+      </div>
+    );
+  };
+
   const renderShapeLayer = (layer: ShapeLayer) => {
     const style: React.CSSProperties = {
       position: 'absolute',
@@ -833,6 +903,8 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
         return renderImageLayer(layer as ImageLayer);
       case 'shape':
         return renderShapeLayer(layer as ShapeLayer);
+      case 'svg':
+        return renderSVGLayer(layer as SVGLayer);
       default:
         return null;
     }
@@ -1043,6 +1115,32 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
       fillColor: '#6366f1',
       strokeColor: '#4f46e5',
       strokeWidth: 2,
+    };
+    
+    onLayerAdd(newLayer);
+    onLayerSelect(newLayer.id);
+  };
+
+  const addSVGLayer = (content?: string, prompt?: string) => {
+    const defaultSVG = content || `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <rect x="10" y="10" width="80" height="80" fill="#3b82f6" stroke="#1e40af" stroke-width="2"/>
+  <text x="50" y="55" text-anchor="middle" fill="white" font-family="Arial" font-size="12">SVG</text>
+</svg>`;
+
+    const newLayer: SVGLayer = {
+      id: `svg-${Date.now()}`,
+      type: 'svg',
+      x: 35,
+      y: 35,
+      width: 30,
+      height: 30,
+      rotation: 0,
+      opacity: 1,
+      zIndex: slide.layers.length + 1,
+      content: defaultSVG,
+      prompt: prompt || 'Simple SVG rectangle with text',
+      viewBox: '0 0 100 100',
+      preserveAspectRatio: 'xMidYMid meet'
     };
     
     onLayerAdd(newLayer);
@@ -1264,6 +1362,13 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
         >
           <ImageIcon size={16} />
         </button>
+        <button
+          onClick={() => setShowSVGModal(true)}
+          className="p-2 bg-orange-600 text-white rounded hover:bg-orange-500 transition-colors w-10 h-10 flex items-center justify-center"
+          title="Add SVG"
+        >
+          <Codepen size={16} />
+        </button>
         {/* Shape button with dropdown */}
         <div className="relative">
           <button
@@ -1370,6 +1475,16 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
         <div>Delete key to remove layer</div>
         <div className="text-xs text-slate-500 mt-1">Touch: 1 finger = pan (canvas) / move (layer), 2 fingers = zoom</div>
       </div>
+
+      {/* SVG Add Modal */}
+      <SVGAddModal
+        isOpen={showSVGModal}
+        onClose={() => setShowSVGModal(false)}
+        onAddSVG={(content, prompt) => {
+          addSVGLayer(content, prompt);
+          setShowSVGModal(false);
+        }}
+      />
     </div>
   );
 };

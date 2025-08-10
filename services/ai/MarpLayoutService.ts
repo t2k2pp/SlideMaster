@@ -5,6 +5,7 @@
 
 import type { MarpPresentation, MarpSlide } from './MarpContentService';
 import type { EnhancedSlideRequest } from './aiServiceInterface';
+import { decideVisualContentType, type VisualContentRequest } from './visualContentDecisionEngine';
 
 export interface LayoutOptions {
   theme?: string;
@@ -12,14 +13,15 @@ export interface LayoutOptions {
   aspectRatio?: string;
   includeImages?: boolean;
   customLayoutRules?: string;
+  purpose?: string; // for visual content decision
 }
 
 export interface SlideLayer {
   id: string;
-  type: 'text' | 'image';
-  content?: string;
-  src?: string;
-  prompt?: string;
+  type: 'text' | 'image' | 'svg';
+  content?: string; // for text and svg
+  src?: string; // for image
+  prompt?: string; // AI generation prompt
   x: number;
   y: number;
   width: number;
@@ -30,6 +32,11 @@ export interface SlideLayer {
   objectFit?: 'cover' | 'contain' | 'fill';
   objectPosition?: string;
   zIndex?: number;
+  // SVG-specific properties
+  viewBox?: string;
+  fillColor?: string;
+  strokeColor?: string;
+  strokeWidth?: number;
 }
 
 export interface JSONSlide {
@@ -127,6 +134,7 @@ ${customLayoutRules ? `**追加レイアウトルール:** ${customLayoutRules}`
       aspectRatio: '16:9', // デフォルト
       includeImages: request.includeImages,
       customLayoutRules: request.customInstructions,
+      purpose: request.purpose, // SVG/Image決定に使用
     };
   }
 
@@ -278,5 +286,78 @@ ${customLayoutRules ? `**追加レイアウトルール:** ${customLayoutRules}`
     };
     
     return colors[theme as keyof typeof colors] || colors['professional'];
+  }
+
+  /**
+   * 🆕 視覚要素のコンテンツタイプを自動決定
+   */
+  private decideVisualContentType(
+    prompt: string,
+    slideContext: string,
+    position: { x: number; y: number; width: number; height: number },
+    options: LayoutOptions
+  ): 'svg' | 'image' {
+    const request: VisualContentRequest = {
+      prompt,
+      slideContext,
+      purpose: options.purpose,
+      theme: options.theme,
+      position
+    };
+
+    const decision = decideVisualContentType(request);
+    
+    console.log('🎨 Visual content decision:', {
+      prompt: prompt.substring(0, 50) + '...',
+      decision: decision.contentType,
+      confidence: decision.confidence.toFixed(2),
+      reasoning: decision.reasoning
+    });
+
+    return decision.contentType;
+  }
+
+  /**
+   * 🆕 プロンプト内の視覚要素を分析しSVG/Imageを自動選択
+   */
+  enhanceLayoutPromptWithVisualDecisions(
+    basePrompt: string, 
+    marpPresentation: MarpPresentation,
+    options: LayoutOptions
+  ): string {
+    // レイアウトプロンプトにSVG/Image決定指針を追加
+    const enhancedPrompt = basePrompt + `
+
+🎯 **重要：視覚コンテンツの自動選択指針**
+
+各スライドの視覚要素について、以下の基準でtypeを決定してください：
+
+**SVGを選択すべき場合 (type: "svg")**:
+- アイコン、ロゴ、記号
+- グラフ、チャート、図表、ダイアグラム
+- フローチャート、組織図
+- 抽象的な概念図、幾何学図形
+- シンプルなイラスト、線画
+- UI要素（ボタン、矢印など）
+
+**Imageを選択すべき場合 (type: "image")**:
+- 写真、リアルな画像
+- 複雑な背景やテクスチャ
+- 人物、風景、建物
+- 詳細で写実的な表現が必要なもの
+
+**出力JSONでのtype指定**:
+- SVG選択時: "type": "svg", "content": "<svg>...</svg>", "prompt": "生成用プロンプト"
+- Image選択時: "type": "image", "src": "", "prompt": "生成用プロンプト"
+
+**決定例**:
+- "売上グラフ" → type: "svg"
+- "会社ロゴ" → type: "svg"  
+- "オフィス写真" → type: "image"
+- "人物ポートレート" → type: "image"
+
+各視覚要素のtypeを適切に判断してJSONに含めてください。`;
+
+    return enhancedPrompt;
   }
 }

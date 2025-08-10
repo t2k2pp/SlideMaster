@@ -77,7 +77,14 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
       
       // Phase 2: JSONレイアウト生成
       const layoutOptions = MarpLayoutService.fromEnhancedRequest(request);
-      const layoutPrompt = this.marpLayoutService.buildLayoutPrompt(marpPresentation, layoutOptions);
+      const baseLayoutPrompt = this.marpLayoutService.buildLayoutPrompt(marpPresentation, layoutOptions);
+      
+      // 🆕 SVG/Image自動選択機能を統合
+      const layoutPrompt = this.marpLayoutService.enhanceLayoutPromptWithVisualDecisions(
+        baseLayoutPrompt,
+        marpPresentation,
+        layoutOptions
+      );
       
       console.log('🎨 Phase 2: Generating JSON layout...');
       console.log('🎨 Layout prompt length:', layoutPrompt.length);

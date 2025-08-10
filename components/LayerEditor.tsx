@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LayerEditorProps, TextLayer, ImageLayer, ShapeLayer } from '../types';
+import { LayerEditorProps, TextLayer, ImageLayer, ShapeLayer, SVGLayer } from '../types';
 import { TEXT_STYLES, THEME_CONFIGS } from '../constants';
 import { generateSlideImage } from '../services/ai/unifiedAIService';
 import { setImageLayerNaturalDimensions } from '../utils/layerFactory';
@@ -28,6 +28,7 @@ import {
   Clipboard,
   Undo,
   Redo,
+  Codepen, // SVG用のアイコン
 } from 'lucide-react';
 
 /**
@@ -525,6 +526,7 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
           {layer.type === 'text' && <Type size={16} className="text-blue-400" />}
           {layer.type === 'image' && <Image size={16} className="text-green-400" />}
           {layer.type === 'shape' && <Square size={16} className="text-purple-400" />}
+          {layer.type === 'svg' && <Codepen size={16} className="text-orange-400" />}
           <span className="text-sm font-medium text-slate-900 dark:text-white capitalize">{layer.type} Layer</span>
         </div>
         <div className="flex items-center gap-1">
@@ -1059,6 +1061,127 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
   // Shape Layer Controls
   // =================================================================
 
+  const renderSVGControls = () => {
+    const svgLayer = layer as SVGLayer;
+    
+    return (
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">SVG Content</label>
+          <div className="relative">
+            <textarea
+              value={svgLayer.content}
+              onChange={(e) => onUpdate({ content: e.target.value })}
+              className="w-full px-3 py-2 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-sm resize-none font-mono"
+              rows={6}
+              placeholder="<svg viewBox='0 0 100 100'>...</svg>"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">AI Prompt</label>
+          <input
+            type="text"
+            value={svgLayer.prompt}
+            onChange={(e) => onUpdate({ prompt: e.target.value })}
+            className="w-full px-3 py-2 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-sm"
+            placeholder="Describe the SVG you want to generate"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">ViewBox</label>
+          <input
+            type="text"
+            value={svgLayer.viewBox || ''}
+            onChange={(e) => onUpdate({ viewBox: e.target.value })}
+            className="w-full px-3 py-2 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-sm font-mono"
+            placeholder="0 0 100 100"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-3">
+          <div>
+            <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Fill Color Override</label>
+            <div className="flex gap-2 items-center">
+              <input
+                type="color"
+                value={svgLayer.fillColor || '#3b82f6'}
+                onChange={(e) => onUpdate({ fillColor: e.target.value })}
+                className="w-10 h-8 rounded border border-slate-300 dark:border-slate-700"
+              />
+              <input
+                type="text"
+                value={svgLayer.fillColor || ''}
+                onChange={(e) => onUpdate({ fillColor: e.target.value })}
+                className="flex-1 px-3 py-2 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-sm"
+                placeholder="#3b82f6"
+              />
+              <button
+                onClick={() => onUpdate({ fillColor: '' })}
+                className="px-2 py-2 bg-slate-200 dark:bg-slate-700 rounded text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600 text-xs"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Stroke Color Override</label>
+            <div className="flex gap-2 items-center">
+              <input
+                type="color"
+                value={svgLayer.strokeColor || '#000000'}
+                onChange={(e) => onUpdate({ strokeColor: e.target.value })}
+                className="w-10 h-8 rounded border border-slate-300 dark:border-slate-700"
+              />
+              <input
+                type="text"
+                value={svgLayer.strokeColor || ''}
+                onChange={(e) => onUpdate({ strokeColor: e.target.value })}
+                className="flex-1 px-3 py-2 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-sm"
+                placeholder="#000000"
+              />
+              <button
+                onClick={() => onUpdate({ strokeColor: '' })}
+                className="px-2 py-2 bg-slate-200 dark:bg-slate-700 rounded text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600 text-xs"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Stroke Width Override</label>
+            <input
+              type="number"
+              value={svgLayer.strokeWidth || ''}
+              onChange={(e) => onUpdate({ strokeWidth: e.target.value ? parseFloat(e.target.value) : undefined })}
+              className="w-full px-3 py-2 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-sm"
+              placeholder="1.0"
+              min="0"
+              step="0.1"
+            />
+          </div>
+        </div>
+
+        <div className="pt-2">
+          <button
+            onClick={() => {
+              // AI SVG regeneration could be implemented here
+              console.log('Regenerate SVG with AI:', svgLayer.prompt);
+            }}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-slate-900 dark:text-white rounded-lg hover:bg-orange-700 transition-colors"
+          >
+            <Sparkles size={16} />
+            Regenerate with AI
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const renderShapeControls = () => {
     const shapeLayer = layer as ShapeLayer;
     
@@ -1190,6 +1313,7 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
               {layer.type === 'text' && <Type size={16} className="text-blue-400" />}
               {layer.type === 'image' && <Image size={16} className="text-green-400" />}
               {layer.type === 'shape' && <Square size={16} className="text-purple-400" />}
+              {layer.type === 'svg' && <Codepen size={16} className="text-orange-400" />}
             </div>
             <div>
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Layer Editor</h3>
@@ -1251,6 +1375,7 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
         {layer.type === 'text' && renderTextControls()}
         {layer.type === 'image' && renderImageControls()}
         {layer.type === 'shape' && renderShapeControls()}
+        {layer.type === 'svg' && renderSVGControls()}
 
         {/* Divider */}
         <div className="border-t border-slate-200 dark:border-slate-700 my-6"></div>
