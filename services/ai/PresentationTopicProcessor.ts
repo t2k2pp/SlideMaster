@@ -62,20 +62,17 @@ function analyzeTopicStructure(topic: string): {
 async function expandMinimalTopic(topic: string): Promise<string> {
   const aiService = getAIService();
   
-  const prompt = `以下のトピックを分析し、プレゼンテーション作成に最適な詳細内容に展開してください。
+  const prompt = `以下のトピックを、ユーザーの元の意図を正確に保持したまま、スライド作成に適した内容に展開してください。
 
 入力トピック: "${topic}"
 
-展開時の指針:
-1. ユーザーの意図を推測（物語、解説、学習、ビジネス等）
-2. スライド構成に必要な要素を補完
-3. 視覚的表現に適した内容に変換
-4. 対象者を想定した適切な詳細度
+展開の原則:
+- ユーザーが求めている内容の本質を変えない
+- 物語・創作系の場合は、ストーリーの魅力を重視
+- 教育・ビジネス系の場合のみ、学習効果や実用性を考慮
+- 元のトーンと方向性を保持
 
-出力は200-400文字程度の構造化された内容にしてください。
-元の意図は保持しつつ、スライド作成に必要な情報を補完してください。
-
-展開された内容:`;
+簡潔で自然な展開内容（150-300文字程度）:`;
 
   try {
     const result = await aiService.generateText(prompt);
