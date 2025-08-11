@@ -6,8 +6,8 @@
 import { getAIService } from './unifiedAIService';
 
 export interface TopicAnalysis {
-  originalTopic: string;
-  processedTopic: string;
+  userInputTopic: string;        // ユーザーがホーム画面で入力した内容
+  contextAnalysisText: string;   // AI分析による拡張テキスト（Context Intelligence用）
   contentType: 'minimal' | 'structured' | 'unstructured_large';
   wordCount: number;
   lineCount: number;
@@ -123,10 +123,10 @@ async function structureLargeTopic(topic: string): Promise<string> {
 /**
  * メイン処理：トピックを分析・前処理する
  */
-export async function processPresentationTopic(originalTopic: string): Promise<TopicAnalysis> {
-  const structure = analyzeTopicStructure(originalTopic);
+export async function processPresentationTopic(userInputTopic: string): Promise<TopicAnalysis> {
+  const structure = analyzeTopicStructure(userInputTopic);
   const processingApplied: string[] = [];
-  let processedTopic = originalTopic;
+  let contextAnalysisText = userInputTopic;
   let contentType: TopicAnalysis['contentType'] = 'structured';
   
   try {
@@ -138,13 +138,13 @@ export async function processPresentationTopic(originalTopic: string): Promise<T
         sentenceCount: structure.sentenceCount
       });
       
-      processedTopic = await expandMinimalTopic(originalTopic);
+      contextAnalysisText = await expandMinimalTopic(userInputTopic);
       processingApplied.push('minimal_expansion');
       contentType = 'minimal';
       
       console.log('✅ Topic expanded:', {
-        original: originalTopic,
-        expanded: processedTopic.substring(0, 100) + '...'
+        original: userInputTopic,
+        expanded: contextAnalysisText.substring(0, 100) + '...'
       });
       
     } else if (structure.isUnstructuredLarge) {
@@ -154,13 +154,13 @@ export async function processPresentationTopic(originalTopic: string): Promise<T
         lineCount: structure.lineCount
       });
       
-      processedTopic = await structureLargeTopic(originalTopic);
+      contextAnalysisText = await structureLargeTopic(userInputTopic);
       processingApplied.push('mece_structuring');
       contentType = 'unstructured_large';
       
       console.log('✅ Topic structured:', {
-        original: originalTopic.substring(0, 50) + '...',
-        structured: processedTopic.substring(0, 100) + '...'
+        original: userInputTopic.substring(0, 50) + '...',
+        structured: contextAnalysisText.substring(0, 100) + '...'
       });
       
     } else {
@@ -172,13 +172,13 @@ export async function processPresentationTopic(originalTopic: string): Promise<T
   } catch (error) {
     console.error('Topic processing error:', error);
     // エラー時は元のトピックを使用
-    processedTopic = originalTopic;
+    contextAnalysisText = userInputTopic;
     processingApplied.push('error_fallback');
   }
 
   return {
-    originalTopic,
-    processedTopic,
+    userInputTopic,
+    contextAnalysisText,
     contentType,
     wordCount: structure.wordCount,
     lineCount: structure.lineCount,

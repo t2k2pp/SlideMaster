@@ -36,10 +36,41 @@ export interface MarpPresentation {
 
 export class MarpContentService {
   /**
-   * トピックから基本的なMarpコンテンツを生成
-   * デザイナーやテーマに関係なく、内容重視のMarkdownベースコンテンツ
+   * プレゼンテーションタイトルを生成
    */
-  buildMarpPrompt(options: MarpContentOptions): string {
+  buildTitleGenerationPrompt(options: MarpContentOptions): string {
+    const { topic, purpose, theme, designer, slideCount } = options;
+    
+    return `以下の条件に基づいて、最適なプレゼンテーションタイトルを1つ生成してください。
+
+**条件:**
+- 内容: ${topic}
+- 用途: ${purpose}
+- テーマ: ${theme}
+- デザイナー: ${designer}
+- スライド数: ${slideCount}枚
+
+**タイトル要件（重要）:**
+- 必ず15-25文字以内で収める
+- 内容が一目で分かる簡潔な表現
+- 対象者と用途に適している
+- 覚えやすく親しみやすい
+
+**絶対条件:**
+- タイトルのみを1行で出力
+- 説明文、解説、前置きは一切不要
+- 25文字を超える場合は必ず短縮する
+
+**出力例:**
+ロジカルシンキング研修（15文字）
+データ分析入門講座（10文字）`;
+  }
+
+  /**
+   * トピックから基本的なMarpコンテンツを生成
+   * 事前に生成されたタイトルを使用
+   */
+  buildMarpPrompt(options: MarpContentOptions, generatedTitle: string): string {
     const {
       topic,
       slideCount = 5,
@@ -56,54 +87,34 @@ export class MarpContentService {
     // 用途別の構成指向
     const purposeGuidance = this.getPurposeGuidance(purpose);
 
-    return `あなたは優秀なプレゼンテーションライターです。「${topic}」について${slideCount}枚のプレゼンテーション用コンテンツを作成してください。
+    return `「${topic}」について${slideCount}枚のプレゼンテーション資料を作成してください。
+タイトルは"${generatedTitle}"を使用してください。
 
-【重要】Marpフォーマット（Markdown）で出力し、後でJSONレイアウトに変換します。
+Marp形式で出力：
 
-**コンテンツ指針:**
-${designerGuidance}
-
-**構成指針:**
-${purposeGuidance}
-
-**出力形式（Marp準拠）:**
 ---
-title: プレゼンテーションタイトル
-description: プレゼンテーション概要
+title: ${generatedTitle}
+description: ${generatedTitle}について
 theme: ${theme}
 ---
 
-# プレゼンテーションタイトル
-## サブタイトルまたは概要
+# ${generatedTitle}
+## サブタイトル
 
 ---
 
-# スライド2のタイトル
+# 2枚目のスライド
+内容...
+${includeImages ? '**画像説明:** [説明]' : ''}
+**ノート:** 発表者向け説明
 
-内容をここに書く。箇条書きや段落で構成。
+以降${slideCount}枚まで続ける。
 
-${includeImages ? '**画像説明:** [このスライドに適した画像の説明]' : ''}
-
-**ノート:** 発表者向けの補足説明
-
----
-
-# スライド3のタイトル
-
-続きの内容...
-
-**要件:**
-1. 各スライドは1つのメインアイデアに集中
-2. タイトルは明確で魅力的
-3. 内容は聞き手にとって価値ある情報
-4. ${includeImages ? '各スライドに適切な画像説明を含める' : '画像は含めない'}
-5. 発表者ノートで詳細な説明を追加
-6. スライド間の論理的なつながりを重視
-
-${customInstructions ? `**追加指示:** ${customInstructions}` : ''}
-
-**出力:** 上記形式でMarpマークダウンのみ出力。前後の説明文は不要。`;
+${designerGuidance}
+${purposeGuidance}
+${customInstructions ? customInstructions : ''}`;
   }
+
 
   /**
    * Enhanced Slide Requestからオプションを変換
@@ -121,10 +132,48 @@ ${customInstructions ? `**追加指示:** ${customInstructions}` : ''}
   }
 
   /**
+   * AIの応答からMarp部分のみを抽出
+   */
+  private extractMarpFromResponse(responseText: string): string {
+    // 最初の --- を探す（Marpメタデータの開始）
+    const firstYamlFrontMatter = responseText.indexOf('---');
+    if (firstYamlFrontMatter === -1) {
+      // --- がない場合は、最初の # から始まるMarpコンテンツを探す
+      const firstHeader = responseText.search(/^#\s+/m);
+      if (firstHeader !== -1) {
+        return responseText.substring(firstHeader);
+      }
+      return responseText;
+    }
+    
+    // --- より前に分析テキストがある場合はスキップ
+    const beforeYaml = responseText.substring(0, firstYamlFrontMatter).trim();
+    if (beforeYaml.length > 50 && (
+        beforeYaml.includes('ユーザーの意図') || 
+        beforeYaml.includes('スライド構成') ||
+        beforeYaml.includes('視覚的表現') ||
+        beforeYaml.includes('構成案') ||
+        beforeYaml.includes('展開された内容') ||
+        beforeYaml.includes('トピック:') ||
+        beforeYaml.includes('**トピック:**') ||
+        beforeYaml.includes('プレゼンテーションとして') ||
+        beforeYaml.includes('詳細内容を推奨')
+      )) {
+      // 分析テキストを除いてMarp部分のみを返す
+      return responseText.substring(firstYamlFrontMatter);
+    }
+    
+    return responseText;
+  }
+
+  /**
    * Marp形式の応答をパース
    */
   parseMarpResponse(marpText: string): MarpPresentation {
-    const lines = marpText.split('\n');
+    // AIが分析内容を含んでいる場合、Marp部分を抽出
+    const cleanedMarpText = this.extractMarpFromResponse(marpText);
+    
+    const lines = cleanedMarpText.split('\n');
     const slides: MarpSlide[] = [];
     let currentSlide: Partial<MarpSlide> = {};
     let inMetadata = false;
@@ -179,7 +228,7 @@ ${customInstructions ? `**追加指示:** ${customInstructions}` : ''}
           });
           currentSlide = {};
         }
-        currentSlide.title = line.replace('# ', '').trim();
+        currentSlide.title = this.extractProperTitle(line.replace('# ', '').trim());
         currentSlide.content = '';
         i++;
         continue;
@@ -228,7 +277,7 @@ ${customInstructions ? `**追加指示:** ${customInstructions}` : ''}
     }
 
     return {
-      title: title || slides[0]?.title || 'プレゼンテーション',
+      title: this.extractProperTitle(title || slides[0]?.title || 'プレゼンテーション'),
       description: description || 'プレゼンテーション',
       slides,
       metadata: {
@@ -238,6 +287,108 @@ ${customInstructions ? `**追加指示:** ${customInstructions}` : ''}
         designer: 'The Academic Visualizer'
       }
     };
+  }
+
+  /**
+   * 異常に長いタイトルから適切なタイトルを抽出
+   */
+  private extractProperTitle(rawTitle: string): string {
+    if (!rawTitle || rawTitle.length <= 80) {
+      return rawTitle;
+    }
+
+    // 分析的なテキストをフィルタリング（これらで始まる場合は分析内容なのでスキップ）
+    const analysisPatterns = [
+      /^\d+\.\s*ユーザー/,
+      /^\d+\.\s*スライド構成/,
+      /^構成案：/,
+      /^対象者：/,
+      /^視覚的表現：/,
+      /^この構成で/,
+      /^以下の要件/
+    ];
+
+    const isAnalysisText = analysisPatterns.some(pattern => pattern.test(rawTitle));
+    if (isAnalysisText) {
+      // 分析テキストからキーワードを抽出してタイトル化
+      return this.extractTitleFromAnalysis(rawTitle);
+    }
+
+    // 通常のタイトル抽出パターン
+    const titleCandidates = [
+      // 【タイトル案】【研修タイトル】などの後のタイトル
+      /【(?:タイトル案?|研修タイトル|プレゼン?タイトル)】\s*([^\n【]*)/,
+      /(?:タイトル案?|研修タイトル)[：:]\s*([^\n]*)/,
+      // クォーテーション内のタイトル
+      /[「『"]([\s\S]*?)[」』"]/,
+      // ★や■などの記号付きタイトル
+      /[★■▲●]\s*([^\n]*)/,
+      // 最初の適切な長さの行
+      /^([^\n]{8,60})(?:\n|$)/,
+      // トピック関連キーワードを含む短いフレーズ
+      /((?:実践的?|基礎|応用|入門|研修|講座|セミナー|トレーニング)[\s\S]{0,30})/
+    ];
+
+    for (const pattern of titleCandidates) {
+      const match = rawTitle.match(pattern);
+      if (match && match[1]) {
+        const extracted = match[1].trim()
+          .replace(/[「」『』【】]/g, '') // かっこを除去
+          .replace(/^\*+\s*/, '') // 先頭の*を除去
+          .replace(/^#+\s*/, '') // 先頭の#を除去
+          .replace(/[：:]\s*$/, '') // 末尾の:を除去
+          .trim();
+        
+        if (extracted.length >= 6 && extracted.length <= 80) {
+          return extracted;
+        }
+      }
+    }
+
+    // フォールバック: 最初の文から適切な部分を抽出
+    const firstSentence = rawTitle.split(/[。\n]/)[0];
+    if (firstSentence && firstSentence.length <= 80 && !firstSentence.includes('ユーザー') && !firstSentence.includes('構成')) {
+      return firstSentence.trim();
+    }
+
+    // 最終フォールバック: 汎用的なタイトル
+    return 'プレゼンテーション';
+  }
+
+  /**
+   * 分析テキストからキーワードを抽出してタイトル化
+   */
+  private extractTitleFromAnalysis(analysisText: string): string {
+    // 分析テキスト内からトピックキーワードを抽出
+    const topicKeywords = [
+      'ロジカルシンキング', 'クリティカルシンキング', 'デザイン思考',
+      'プロジェクトマネジメント', 'リーダーシップ', 'コミュニケーション',
+      'マーケティング', 'プレゼンテーション', 'データ分析', 'DX',
+      'AI', '機械学習', 'セキュリティ', 'コンプライアンス'
+    ];
+
+    for (const keyword of topicKeywords) {
+      if (analysisText.includes(keyword)) {
+        return `${keyword}研修`;
+      }
+    }
+
+    // より一般的なパターンマッチング
+    const generalPatterns = [
+      /「([^」]{4,30})」.*研修/,
+      /「([^」]{4,30})」.*説明/,
+      /([^\s]{4,20}).*研修.*資料/,
+      /([^\s]{4,20}).*説明.*スライド/
+    ];
+
+    for (const pattern of generalPatterns) {
+      const match = analysisText.match(pattern);
+      if (match && match[1]) {
+        return `${match[1]}研修`;
+      }
+    }
+
+    return 'ビジネス研修';
   }
 
   private getDesignerContentGuidance(designer: string): string {

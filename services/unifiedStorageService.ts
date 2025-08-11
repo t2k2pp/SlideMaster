@@ -22,6 +22,7 @@ const getIndexedDBService = async () => {
 // =================================================================
 
 export const savePresentation = async (presentation: Presentation): Promise<void> => {
+  console.log(`🔄 Attempting to save presentation: ${presentation.title} (ID: ${presentation.id})`);
   try {
     // Try IndexedDB first (new storage system)
     const idbService = await getIndexedDBService();
@@ -31,6 +32,7 @@ export const savePresentation = async (presentation: Presentation): Promise<void
     console.warn('IndexedDB save failed, falling back to localStorage:', error);
     // Fallback to localStorage (legacy system)
     await legacyStorage.savePresentation(presentation);
+    console.log(`✅ Presentation saved to localStorage (fallback): ${presentation.title}`);
   }
 };
 
@@ -106,6 +108,7 @@ export const listPresentations = async (): Promise<Presentation[]> => {
   try {
     const idbService = await getIndexedDBService();
     const idbPresentations = await idbService.getAllPresentations();
+    console.log(`🔍 IndexedDB presentations found: ${idbPresentations.length}`);
     for (const presentation of idbPresentations) {
       presentations.push(presentation);
       seenIds.add(presentation.id);
@@ -117,6 +120,7 @@ export const listPresentations = async (): Promise<Presentation[]> => {
   // Get from localStorage and merge (avoiding duplicates)
   try {
     const localPresentations = await legacyStorage.listPresentations();
+    console.log(`🔍 localStorage presentations found: ${localPresentations.length}`);
     for (const presentation of localPresentations) {
       if (!seenIds.has(presentation.id)) {
         presentations.push(presentation);
@@ -133,6 +137,7 @@ export const listPresentations = async (): Promise<Presentation[]> => {
     new Date(a.updatedAt || a.createdAt).getTime()
   );
 
+  console.log(`🔍 Total presentations returned: ${presentations.length}`);
   return presentations;
 };
 

@@ -92,6 +92,7 @@ const App: React.FC = () => {
 
   // Screen management state
   const [currentScreen, setCurrentScreen] = useState<'welcome' | 'editor' | 'settings' | 'slideshow'>('welcome');
+  const [previousScreen, setPreviousScreen] = useState<'welcome' | 'editor'>('welcome');
   
   const [showAIAssistant, setShowAIAssistant] = useState(false);
   const [showExportManager, setShowExportManager] = useState(false);
@@ -616,13 +617,13 @@ const App: React.FC = () => {
       console.log('✅ Topic processing completed:', {
         contentType: topicAnalysis.contentType,
         processingApplied: topicAnalysis.processingApplied,
-        originalLength: topicAnalysis.originalTopic.length,
-        processedLength: topicAnalysis.processedTopic.length
+        originalLength: topicAnalysis.userInputTopic.length,
+        processedLength: topicAnalysis.contextAnalysisText.length
       });
       
       // SlideGenerationRequestをEnhancedSlideRequestに変換
       const enhancedRequest: EnhancedSlideRequest = {
-        topic: topicAnalysis.processedTopic, // 前処理されたトピックを使用
+        topic: topicAnalysis.userInputTopic, // 元のトピックを使用（分析テキストではなく）
         slideCount: request.slideCount,
         slideCountMode: request.slideCountMode || 'fixed',
         selectedDesigner: request.designer || request.selectedDesigner || undefined, // Context Intelligence Engineに任せる
@@ -1131,11 +1132,17 @@ const App: React.FC = () => {
             onManualGenerate={handleManualSlidesGenerated}
             onAutoGenerate={handleAutoSlidesGenerated}
             onImportProject={importProject}
-            onOpenSettings={() => setCurrentScreen('settings')}
+            onOpenSettings={() => {
+              setPreviousScreen('welcome');
+              setCurrentScreen('settings');
+            }}
             recentPresentations={appState.recentPresentations}
             isProcessing={isProcessing}
             hasApiKey={isAIAvailable}
-            onApiKeySetup={() => setCurrentScreen('settings')}
+            onApiKeySetup={() => {
+              setPreviousScreen('welcome');
+              setCurrentScreen('settings');
+            }}
           />
           
           <Toaster 
@@ -1152,7 +1159,7 @@ const App: React.FC = () => {
 
       {currentScreen === 'settings' && (
         <div className="h-screen w-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white">
-          <SettingsScreen onBack={() => setCurrentScreen('welcome')} />
+          <SettingsScreen onBack={() => setCurrentScreen(previousScreen)} />
           <Toaster position="top-right" />
         </div>
       )}
@@ -1168,7 +1175,10 @@ const App: React.FC = () => {
             onStartSlideShow={() => startSlideShow(appState.currentSlideIndex)}
             onPageNumberManager={() => setShowPageNumberManager(true)}
             onVersionInfo={() => setShowVersionInfo(true)}
-            onSettings={() => setCurrentScreen('settings')}
+            onSettings={() => {
+              setPreviousScreen('editor');
+              setCurrentScreen('settings');
+            }}
             isProcessing={isProcessing}
             hasApiKey={isAIAvailable}
           />
@@ -1268,7 +1278,10 @@ const App: React.FC = () => {
               error={appState.error}
               onClose={() => setShowAIAssistant(false)}
               hasApiKey={isAIAvailable}
-              onApiKeySetup={() => setCurrentScreen('settings')}
+              onApiKeySetup={() => {
+                setPreviousScreen('editor');
+                setCurrentScreen('settings');
+              }}
               currentPresentation={appState.currentPresentation}
             />
           )}

@@ -5,7 +5,7 @@
 
 import type { MarpPresentation, MarpSlide } from './MarpContentService';
 import type { EnhancedSlideRequest } from './aiServiceInterface';
-import { decideVisualContentType, type VisualContentRequest } from './visualContentDecisionEngine';
+// Visual content decision is now handled by AI in the layout prompt
 
 export interface LayoutOptions {
   theme?: string;
@@ -288,76 +288,92 @@ ${customLayoutRules ? `**追加レイアウトルール:** ${customLayoutRules}`
     return colors[theme as keyof typeof colors] || colors['professional'];
   }
 
-  /**
-   * 🆕 視覚要素のコンテンツタイプを自動決定
-   */
-  private decideVisualContentType(
-    prompt: string,
-    slideContext: string,
-    position: { x: number; y: number; width: number; height: number },
-    options: LayoutOptions
-  ): 'svg' | 'image' {
-    const request: VisualContentRequest = {
-      prompt,
-      slideContext,
-      purpose: options.purpose,
-      theme: options.theme,
-      position
-    };
-
-    const decision = decideVisualContentType(request);
-    
-    console.log('🎨 Visual content decision:', {
-      prompt: prompt.substring(0, 50) + '...',
-      decision: decision.contentType,
-      confidence: decision.confidence.toFixed(2),
-      reasoning: decision.reasoning
-    });
-
-    return decision.contentType;
-  }
+  // Visual content decision is now handled by AI in enhanceLayoutPromptWithVisualDecisions
 
   /**
-   * 🆕 プロンプト内の視覚要素を分析しSVG/Imageを自動選択
+   * 🆕 AI判断によるSVG/Image自動選択とSVG生成統合
    */
   enhanceLayoutPromptWithVisualDecisions(
     basePrompt: string, 
     marpPresentation: MarpPresentation,
     options: LayoutOptions
   ): string {
-    // レイアウトプロンプトにSVG/Image決定指針を追加
+    // 用途とテーマからコンテキストを構築
+    const purposeContext = this.buildPurposeContext(options.purpose);
+    const themeContext = this.buildThemeContext(options.theme);
+    
     const enhancedPrompt = basePrompt + `
 
-🎯 **重要：視覚コンテンツの自動選択指針**
+🎯 **重要：コンテキストに基づく視覚コンテンツ戦略**
 
-各スライドの視覚要素について、以下の基準でtypeを決定してください：
+**プレゼンテーション用途**: ${options.purpose || 'general'} - ${purposeContext}
+**テーマスタイル**: ${options.theme || 'professional'} - ${themeContext}
 
-**SVGを選択すべき場合 (type: "svg")**:
-- アイコン、ロゴ、記号
-- グラフ、チャート、図表、ダイアグラム
-- フローチャート、組織図
-- 抽象的な概念図、幾何学図形
-- シンプルなイラスト、線画
-- UI要素（ボタン、矢印など）
+上記の用途とテーマを考慮し、各スライドで視覚要素が必要な場合は以下の判断基準に従ってください：
 
-**Imageを選択すべき場合 (type: "image")**:
-- 写真、リアルな画像
-- 複雑な背景やテクスチャ
-- 人物、風景、建物
-- 詳細で写実的な表現が必要なもの
+**SVG適用判断基準**:
+1. **ビジネス・学術・技術系**: データ表現、プロセス図、概念図、構造図 → 積極的にSVG使用
+2. **教育・解説系**: 理解促進のための図解、手順説明 → SVG推奨  
+3. **ストーリー・創作系**: 装飾的な要素以外は基本的にImage優先
+4. **子供向け**: 温かみのあるImage中心、必要最小限のSVG
 
-**出力JSONでのtype指定**:
-- SVG選択時: "type": "svg", "content": "<svg>...</svg>", "prompt": "生成用プロンプト"
-- Image選択時: "type": "image", "src": "", "prompt": "生成用プロンプト"
+**SVG生成すべき内容例**:
+- 各種グラフ・チャート（売上、比較、推移など）
+- フローチャート・プロセス図  
+- 組織図・関係図・構造図
+- ER図・システム図・アーキテクチャ図
+- 概念図・理論図・モデル図
+- アイコン・記号・矢印
 
-**決定例**:
-- "売上グラフ" → type: "svg"
-- "会社ロゴ" → type: "svg"  
-- "オフィス写真" → type: "image"
-- "人物ポートレート" → type: "image"
+**Image使用すべき内容例**:
+- 写真・風景・人物
+- 具体的な製品・物品
+- 雰囲気作りの背景
+- リアルな表現が必要なもの
 
-各視覚要素のtypeを適切に判断してJSONに含めてください。`;
+**出力形式**:
+- SVG必要時: "type": "svg", "content": "[実際のSVGコード]", "prompt": "SVG生成指示"
+- Image必要時: "type": "image", "src": "", "prompt": "画像生成指示"
+
+**重要**: 用途が「${options.purpose || 'general'}」であることを常に考慮し、不適切な視覚要素は避けてください。SVGが必要と判断した場合は、promptではなく実際のSVGコードをcontentに含めて出力してください。`;
 
     return enhancedPrompt;
+  }
+
+  /**
+   * 用途コンテキストの構築
+   */
+  private buildPurposeContext(purpose?: string): string {
+    const contexts = {
+      'business_presentation': 'データ・プロセス・構造の可視化が重要。グラフや図表でSVG活用推奨',
+      'academic_research': '理論・データ・関係性の正確な表現が必須。SVG図表が効果的',
+      'educational_content': '理解促進のための分かりやすい図解が重要。概念図はSVG推奨', 
+      'tutorial_guide': '手順・プロセスの明確な表現が必要。フローチャートはSVG最適',
+      'marketing_pitch': 'インパクトのある表現が重要。データ表現はSVG、イメージはPhoto',
+      'technical_documentation': '正確で詳細な技術図表が必要。システム図・ER図はSVG必須',
+      'storytelling': '物語性と感情的表現が重要。基本的にImage中心',
+      'children_content': '親しみやすい表現が重要。温かみのあるImage中心、最小限のSVG',
+      'training_material': '理解しやすい図解が重要。プロセス・概念図はSVG推奨'
+    };
+    
+    return contexts[purpose as keyof typeof contexts] || 'バランスの取れた視覚表現を心がける';
+  }
+
+  /**
+   * テーマコンテキストの構築  
+   */
+  private buildThemeContext(theme?: string): string {
+    const contexts = {
+      'professional': '洗練されたビジネス表現。データ可視化でSVG活用',
+      'academic': '学術的で正確な表現。理論図・データ図はSVG重要',
+      'minimalist': 'シンプルで要点を絞った表現。必要最小限の効果的なSVG',
+      'creative': '創造的で自由な表現。バランスの良いSVG/Image混在',
+      'technical': '技術的で詳細な表現。システム・アーキテクチャ図でSVG必須',
+      'storytelling': '物語性重視。感情的なImage中心',
+      'children_bright': '子供向けの明るい表現。Image中心、補助的SVG',
+      'medical': '医学的精度が重要。正確な図表でSVG活用'
+    };
+    
+    return contexts[theme as keyof typeof contexts] || 'テーマに適した適切な視覚表現';
   }
 }

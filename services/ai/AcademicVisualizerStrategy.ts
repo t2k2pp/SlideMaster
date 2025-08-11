@@ -264,8 +264,11 @@ Professional typography, clear labeling if needed.`;
             // 情報の構造化マーカーを追加
             slide.layers = slide.layers.map((layer: any, index: number) => {
               if (layer.type === 'text' && index > 0 && layer.content) {
-                const hierarchyMarker = this.getHierarchyMarker(index);
-                layer.content = `${hierarchyMarker} ${layer.content}`;
+                // Markdown見出し記法（#で始まる）の場合は記号を追加しない
+                if (!layer.content.trim().startsWith('#')) {
+                  const hierarchyMarker = this.getHierarchyMarker(index);
+                  layer.content = `${hierarchyMarker} ${layer.content}`;
+                }
               }
               return layer;
             });

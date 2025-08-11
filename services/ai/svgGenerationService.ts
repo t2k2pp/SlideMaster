@@ -102,16 +102,30 @@ ${prompt}
   try {
     const result = await aiService.generateText(`${systemPrompt}\n\n${userPrompt}`);
     
-    // SVGタグの抽出
-    const svgMatch = result.match(/<svg[^>]*>[\s\S]*?<\/svg>/i);
+    console.log('🔍 Raw AI response for SVG:', result);
+    
+    // SVGタグの抽出（より寛容な正規表現）
+    let svgMatch = result.match(/<svg[\s\S]*?<\/svg>/gi);
     if (!svgMatch) {
+      // 改行やスペースを考慮したより柔軟な検索
+      svgMatch = result.match(/<svg[\s\S]*<\/svg[\s]*>/gi);
+    }
+    
+    if (!svgMatch) {
+      console.log('⚠️ SVG match failed, trying to extract partial content...');
+      // 部分的なSVGコンテンツの検索
+      const partialMatch = result.match(/<svg[^>]*>/i);
+      if (partialMatch) {
+        console.log('Found partial SVG start tag:', partialMatch[0]);
+      }
       throw new Error('Valid SVG content not found in AI response');
     }
     
-    const svgContent = svgMatch[0];
+    const svgContent = svgMatch[0].trim();
+    console.log('✅ Extracted SVG content:', svgContent.substring(0, 200) + '...');
     
     // viewBox属性の抽出
-    const viewBoxMatch = svgContent.match(/viewBox="([^"]+)"/i);
+    const viewBoxMatch = svgContent.match(/viewBox\s*=\s*["']([^"']+)["']/i);
     const viewBox = viewBoxMatch ? viewBoxMatch[1] : `0 0 ${width} ${height}`;
     
     return {

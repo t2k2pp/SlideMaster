@@ -767,7 +767,7 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
       cursor: 'pointer',
     };
 
-    // SVG色のオーバーライド処理
+    // SVG色のオーバーライド処理とViewBox調整
     let svgContent = layer.content;
     if (layer.fillColor || layer.strokeColor) {
       // 基本的な色の置き換え（より高度な処理も可能）
@@ -782,6 +782,30 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
       }
     }
 
+    // SVGのサイズとpreserveAspectRatioを適切に設定
+    // 既存のpreserveAspectRatioがあれば置き換え、なければ追加
+    if (svgContent.includes('preserveAspectRatio')) {
+      svgContent = svgContent.replace(/preserveAspectRatio="[^"]*"/g, 'preserveAspectRatio="xMidYMid meet"');
+    } else {
+      svgContent = svgContent.replace(
+        /<svg([^>]*)>/,
+        '<svg$1 preserveAspectRatio="xMidYMid meet">'
+      );
+    }
+
+    // SVGのwidth/heightを100%に強制変更（ViewBoxベースでスケール）
+    svgContent = svgContent.replace(/width="[^"]*"/g, 'width="100%"');
+    svgContent = svgContent.replace(/height="[^"]*"/g, 'height="100%"');
+    
+    // ViewBoxが設定されていない場合のフォールバック
+    if (!svgContent.includes('viewBox')) {
+      // デフォルトのviewBoxを追加（一般的な100x100）
+      svgContent = svgContent.replace(
+        /<svg([^>]*)>/,
+        '<svg$1 viewBox="0 0 100 100">'
+      );
+    }
+
     return (
       <div
         key={layer.id}
@@ -789,16 +813,37 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
         style={style}
         className="layer svg-layer"
         data-layer-id={layer.id}
-        onClick={() => handleLayerSelect(layer.id)}
+        onClick={(e) => {
+          e.stopPropagation();
+          handleLayerSelect(layer.id);
+        }}
+        onTouchEnd={(e) => handleLayerTouchEnd(e, layer.id)}
       >
         <div 
           dangerouslySetInnerHTML={{ __html: svgContent }}
           style={{
             width: '100%',
             height: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
+            display: 'block', // flexからblockに変更でSVGの自然なサイズを活用
+            overflow: 'hidden', // はみ出し部分をカット
+            pointerEvents: 'none', // SVG内のクリックイベントを無効化
+          }}
+        />
+        {/* クリック用の透明オーバーレイ */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'transparent',
+            cursor: 'pointer',
+            zIndex: 1,
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleLayerSelect(layer.id);
           }}
         />
         {viewState.selectedLayerId === layer.id && (
@@ -1130,10 +1175,10 @@ const SlideCanvas: React.FC<SlideCanvasProps> = ({
     const newLayer: SVGLayer = {
       id: `svg-${Date.now()}`,
       type: 'svg',
-      x: 35,
-      y: 35,
-      width: 30,
-      height: 30,
+      x: 20,
+      y: 20,
+      width: 60, // 30から60に拡大
+      height: 60, // 30から60に拡大
       rotation: 0,
       opacity: 1,
       zIndex: slide.layers.length + 1,

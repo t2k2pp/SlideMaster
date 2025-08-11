@@ -51,20 +51,37 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
     });
     
     try {
-      // Phase 1: Marpコンテンツ生成
+      // Phase 1: プレゼンテーションタイトル生成
       const marpOptions = MarpContentService.fromEnhancedRequest(request);
-      const marpPrompt = this.marpContentService.buildMarpPrompt(marpOptions);
+      const titlePrompt = this.marpContentService.buildTitleGenerationPrompt(marpOptions);
       
-      console.log('📝 Phase 1: Generating Marp content...');
-      console.log('🎨 Designer-specific Marp prompt length:', marpPrompt.length);
+      console.log('🎯 Phase 1: Generating presentation title...');
+      console.log('📋 Topic length:', request.topic.length, 'characters');
+      console.log('📝 Title generation prompt length:', titlePrompt.length);
       
       const aiService = getTextAIService();
+      const generatedTitle = await aiService.generateText(titlePrompt, {
+        temperature: 0.7,
+        maxTokens: 2048
+      });
+      
+      const cleanTitle = generatedTitle.trim().replace(/^["']|["']$/g, ''); // クォート除去
+      console.log('✅ Phase 1 completed: Title generated');
+      console.log('🎯 Generated title:', cleanTitle);
+      console.log('📏 Title length:', cleanTitle.length, 'characters');
+
+      // Phase 2: Marpコンテンツ生成（確定タイトル使用）
+      const marpPrompt = this.marpContentService.buildMarpPrompt(marpOptions, cleanTitle);
+      
+      console.log('📝 Phase 2: Generating Marp content with confirmed title...');
+      console.log('🎨 Marp prompt length:', marpPrompt.length);
+      
       const marpResponse = await aiService.generateText(marpPrompt, {
         temperature: 0.7,
         maxTokens: 8192
       });
       
-      console.log('✅ Phase 1 completed: Marp content generated');
+      console.log('✅ Phase 2 completed: Marp content generated');
       console.log('📊 Marp response length:', marpResponse.length);
       
       // Marp応答をパース
@@ -91,7 +108,7 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
       
       const jsonResponse = await aiService.generateText(layoutPrompt, {
         temperature: 0.5, // レイアウトは一貫性重視
-        maxTokens: 8192
+        maxTokens: 16384
       });
       
       console.log('✅ Phase 2 completed: JSON layout generated');

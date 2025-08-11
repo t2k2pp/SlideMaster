@@ -31,17 +31,30 @@ function calculateSVGSuitabilityScore(prompt: string, slideContext: string): num
   
   // SVGに適したキーワード（高スコア）
   const svgHighKeywords = [
-    'アイコン', 'icon', 'ロゴ', 'logo', 'マーク', 'mark',
-    'グラフ', 'chart', 'graph', '図表', '棒グラフ', '円グラフ',
-    'フローチャート', 'flowchart', '組織図', 'diagram',
-    '記号', 'symbol', '矢印', 'arrow', 'ボタン', 'button',
-    'パターン', 'pattern', '幾何学', 'geometric', '抽象', 'abstract'
+    // ビジネス図表・チャート
+    'グラフ', 'chart', 'graph', '図表', '棒グラフ', '円グラフ', '折れ線グラフ', 'bar chart', 'pie chart', 'line chart',
+    '売上', '業績', '推移', '比較', '統計', '分析', 'データ', 'data', '収益', '利益',
+    // フローチャート・プロセス図
+    'フローチャート', 'flowchart', '手順', 'process', 'プロセス', '工程', 'workflow', 'ワークフロー', '流れ', 'flow',
+    // 組織・構造図
+    '組織図', '構造図', 'diagram', '関係図', '相関図', 'relationship', 'hierarchy', '階層', 
+    // ビジネス要素
+    'ロゴ', 'logo', 'アイコン', 'icon', 'マーク', 'mark', '記号', 'symbol', '矢印', 'arrow',
+    // 技術・概念図
+    'アーキテクチャ', 'architecture', 'システム', 'system', '設計', 'design', '概念図', 'concept',
+    'ER図', 'database', 'DB', 'テーブル', 'table', '関連', 'relation',
+    // 学術・教育
+    'モデル', 'model', '理論', 'theory', '公式', 'formula', '定理', 'theorem', '証明', 'proof',
+    // 地図・位置関係
+    '地図', 'map', '配置', 'layout', '位置', 'position', '場所', 'location'
   ];
   
   // SVGに適したキーワード（中スコア）
   const svgMediumKeywords = [
-    '図形', 'shape', 'イラスト', 'illustration', '線画', 'line art',
-    'スケッチ', 'sketch', 'シンプル', 'simple', 'ミニマル', 'minimal'
+    '図形', 'shape', 'イラスト', 'illustration', '線画', 'line art', 'スケッチ', 'sketch', 
+    'シンプル', 'simple', 'ミニマル', 'minimal', '抽象', 'abstract', '幾何学', 'geometric',
+    '説明図', '解説', 'explanation', '概要', 'overview', '要約', 'summary',
+    'パターン', 'pattern', 'ボタン', 'button', 'UI', 'interface', 'ガイド', 'guide'
   ];
   
   // 画像に適したキーワード（SVGスコアを下げる）

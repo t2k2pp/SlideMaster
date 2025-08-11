@@ -88,8 +88,8 @@ const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center gap-3 min-w-0 flex-1">
               <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg min-w-0">
                 <span className="text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">Presentation:</span>
-                <span className="text-sm text-slate-900 dark:text-white font-medium truncate" title={presentation.title}>
-                  {presentation.title}
+                <span className="text-sm text-slate-900 dark:text-white font-medium truncate max-w-xs" title={presentation.title}>
+                  {presentation.title.length > 30 ? presentation.title.substring(0, 27) + '...' : presentation.title}
                 </span>
               </div>
               
