@@ -7,6 +7,7 @@ import { AzureService, createAzureService } from './azureService';
 import { GeminiService, createGeminiServiceFromSettings, createGeminiServiceForTask } from './geminiService';
 import { getUserSettings } from '../storageService';
 import { EnhancedSlideRequest, EnhancedAIService } from './aiServiceInterface';
+import { getRecommendedMaxTokens, getModelLimits, checkModelDeprecation } from './aiModelLimits';
 
 // 統一されたAIサービスインターフェース
 export interface UnifiedAIService extends EnhancedAIService {
@@ -16,6 +17,8 @@ export interface UnifiedAIService extends EnhancedAIService {
   generateSlideImage(prompt: string, options?: SlideImageOptions): Promise<string>;
   analyzeVideo(videoData: string, prompt?: string): Promise<string>;
   testConnection(): Promise<boolean>;
+  getMaxTokens(safetyMargin?: number): number; // 動的トークン制限取得
+  getModelInfo(): { service: string; model: string; limits: any } | null; // モデル情報取得
 }
 
 // 拡張生成オプション
@@ -58,6 +61,7 @@ class GeminiUnifiedService implements UnifiedAIService {
   private textService: GeminiService;
   private imageService: GeminiService;
   private videoService: GeminiService;
+  private currentModel: string;
 
   constructor() {
     const settings = getUserSettings();
@@ -67,6 +71,12 @@ class GeminiUnifiedService implements UnifiedAIService {
     if (!geminiAuth?.textGeneration?.apiKey) {
       throw new AIServiceError('Gemini API key is not configured', 'gemini', 'CONFIG_MISSING');
     }
+
+    // 現在使用中のモデル名を取得（設定から、またはデフォルト）
+    this.currentModel = settings.aiModels?.textGeneration || 'gemini-2.0-flash';
+    
+    // モデル非推奨警告
+    checkModelDeprecation('gemini', this.currentModel);
 
     // タスク別のサービスを作成（各々のAPIキーを使用）
     try {
@@ -137,8 +147,7 @@ class GeminiUnifiedService implements UnifiedAIService {
         const result = await this.textService.generateText({
           prompt: enhancedOptions.enhancedPrompt,
           systemPrompt: 'あなたは優秀なプレゼンテーションデザイナーです。指定された形式でスライドコンテンツを生成してください。',
-          temperature: 0.7,
-          maxTokens: 8192
+          temperature: 0.7
         });
         
         console.log('✅ GeminiUnifiedAIService: Enhanced prompt generation completed!');
@@ -197,6 +206,19 @@ class GeminiUnifiedService implements UnifiedAIService {
     }
   }
 
+  getMaxTokens(safetyMargin: number = 0.9): number {
+    return getRecommendedMaxTokens('gemini', this.currentModel, safetyMargin);
+  }
+
+  getModelInfo() {
+    const limits = getModelLimits('gemini', this.currentModel);
+    return {
+      service: 'gemini',
+      model: this.currentModel,
+      limits
+    };
+  }
+
   async testConnection(): Promise<boolean> {
     try {
       // テキスト生成サービスでテストを実行（最も基本的なサービス）
@@ -210,6 +232,7 @@ class GeminiUnifiedService implements UnifiedAIService {
 // Azure OpenAI実装クラス
 class AzureUnifiedService implements UnifiedAIService {
   private azureService: AzureService;
+  private currentModel: string;
 
   constructor() {
     const settings = getUserSettings();
@@ -224,6 +247,12 @@ class AzureUnifiedService implements UnifiedAIService {
     if (!textDeploymentName || textDeploymentName.trim() === '') {
       throw new AIServiceError('テキスト生成のデプロイメント名が設定されていません。設定画面で「デプロイメント名」を入力してください。', 'azure', 'DEPLOYMENT_NAME_MISSING');
     }
+
+    // 現在使用中のモデル名を設定（デプロイメント名 = モデル名として扱う）
+    this.currentModel = textDeploymentName;
+    
+    // モデル非推奨警告
+    checkModelDeprecation('azureOpenAI', this.currentModel);
 
     // 画像生成専用設定を使用、なければテキスト生成設定をフォールバック
     const imageAuth = azureAuth.imageGeneration || azureAuth.textGeneration;
@@ -303,8 +332,7 @@ class AzureUnifiedService implements UnifiedAIService {
         const result = await this.azureService.generateText({
           prompt: enhancedOptions.enhancedPrompt,
           systemPrompt: 'あなたは優秀なプレゼンテーションデザイナーです。指定された形式でスライドコンテンツを生成してください。',
-          temperature: 0.7,
-          maxTokens: 8192
+          temperature: 0.7
         });
         
         console.log('✅ UnifiedAIService: Enhanced prompt generation completed!');
@@ -366,6 +394,19 @@ class AzureUnifiedService implements UnifiedAIService {
         'VIDEO_ANALYSIS_ERROR'
       );
     }
+  }
+
+  getMaxTokens(safetyMargin: number = 0.9): number {
+    return getRecommendedMaxTokens('azureOpenAI', this.currentModel, safetyMargin);
+  }
+
+  getModelInfo() {
+    const limits = getModelLimits('azureOpenAI', this.currentModel);
+    return {
+      service: 'azureOpenAI',
+      model: this.currentModel,
+      limits
+    };
   }
 
   async testConnection(): Promise<boolean> {
@@ -606,7 +647,7 @@ export async function runBasicTest(): Promise<{ success: boolean; results: any }
     if (results.connectionTest) {
       // 簡単なテキスト生成テスト
       try {
-        const testText = await generateText('Hello', { maxTokens: 10 });
+        const testText = await generateText('Hello', { temperature: 0.1 });
         results.textGeneration = { success: true, length: testText.length };
       } catch (error) {
         results.textGeneration = { success: false, error: error instanceof Error ? error.message : 'Unknown error' };

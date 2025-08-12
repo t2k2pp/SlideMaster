@@ -69,16 +69,16 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
     }
     
     try {
-      // 🎯 Auto項目専用のAI分析システム
-      console.log('🔍 Context Intelligence: Analyzing Auto settings only...', request.topic);
-      const autoAnalysis = await contextEngine.analyzeAutoSettings(request.topic, request);
+      // 🚀 統合AI分析システム（1回のAPIコールで効率化）
+      console.log('🚀 Context Intelligence: Starting unified analysis...', request.topic);
+      const unifiedAnalysis = await contextEngine.analyzeWithUnifiedAPI(request.topic, request);
       
-      // 🚀 Auto分析結果をリクエストに統合
-      const intelligentRequest = this.enhanceRequestWithAutoAnalysis(request, autoAnalysis);
+      // 🚀 統合分析結果をリクエストに統合
+      const intelligentRequest = this.enhanceRequestWithUnifiedAnalysis(request, unifiedAnalysis);
       
-      console.log('🧠 Auto Analysis Results:', {
+      console.log('🧠 Unified Analysis Results:', {
         originalTopic: request.topic,
-        autoAnalysisResults: autoAnalysis,
+        unifiedAnalysisResults: unifiedAnalysis,
         enhancedRequest: {
           designer: intelligentRequest.selectedDesigner,
           purpose: intelligentRequest.purpose,
@@ -108,7 +108,7 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
       
       // 5. 画像生成が必要な場合は処理
       const finalContent = intelligentRequest.includeImages ? 
-        await this.enhanceWithImages(processedContent, designerStrategy, intelligentRequest, autoAnalysis) : 
+        await this.enhanceWithImages(processedContent, designerStrategy, intelligentRequest, unifiedAnalysis) : 
         processedContent;
       
       // 6. Title Slideを追加
@@ -122,8 +122,8 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
           processingTime: Date.now(),
           requestParameters: this.extractRequestMetadata(intelligentRequest),
           contextIntelligence: {
-            autoAnalysis: autoAnalysis,
-            intelligentEnhancements: this.getAutoEnhancements(request, intelligentRequest, autoAnalysis)
+            unifiedAnalysis: unifiedAnalysis,
+            intelligentEnhancements: this.getUnifiedEnhancements(request, intelligentRequest, unifiedAnalysis)
           }
         }
       };
@@ -333,7 +333,7 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
     content: string,
     designerStrategy: DesignerStrategy,
     request: EnhancedSlideRequest,
-    autoAnalysis: any
+    unifiedAnalysis: any
   ): Promise<string> {
     try {
       console.log('🔍 Attempting to parse JSON content, length:', content.length);
@@ -361,10 +361,10 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
         
         // 🧠 画像用の簡易コンテンツタイプ分析
         const imageContextAnalysis = {
-          contentType: autoAnalysis.contentType || 'story',
+          contentType: unifiedAnalysis.contentAnalysis?.contentType || 'story',
           emotionalTone: 'emotional',
-          suggestedTheme: autoAnalysis.suggestedTheme || 'storytelling',
-          suggestedDesigner: autoAnalysis.suggestedDesigner || 'The Emotional Storyteller',
+          suggestedTheme: unifiedAnalysis.themeSelection?.selectedTheme || 'storytelling',
+          suggestedDesigner: unifiedAnalysis.designerSelection?.selectedDesigner || 'The Emotional Storyteller',
           confidence: 0.9
         };
         
@@ -737,6 +737,53 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
   }
 
   /**
+   * 🚀 統合分析結果によるリクエスト強化
+   * 統合AI分析結果をリクエストに適用
+   */
+  private enhanceRequestWithUnifiedAnalysis(
+    originalRequest: EnhancedSlideRequest, 
+    unifiedAnalysis: any
+  ): EnhancedSlideRequest {
+    const enhanced = { ...originalRequest };
+
+    console.log('🚀 Enhancing request with unified analysis...');
+
+    // デザイナー自動選択
+    if (!originalRequest.selectedDesigner || originalRequest.selectedDesigner === 'auto') {
+      enhanced.selectedDesigner = unifiedAnalysis.designerSelection.selectedDesigner;
+      console.log(`🎨 Designer auto-selected: ${enhanced.selectedDesigner} (confidence: ${unifiedAnalysis.designerSelection.confidence})`);
+    }
+
+    // 用途自動選択
+    if (!originalRequest.purpose || originalRequest.purpose === 'auto') {
+      enhanced.purpose = unifiedAnalysis.purposeSelection.selectedPurpose;
+      console.log(`📋 Purpose auto-selected: ${enhanced.purpose} (confidence: ${unifiedAnalysis.purposeSelection.confidence})`);
+    }
+
+    // テーマ自動選択
+    if (!originalRequest.theme || originalRequest.theme === 'auto') {
+      enhanced.theme = unifiedAnalysis.themeSelection.selectedTheme;
+      console.log(`🎭 Theme auto-selected: ${enhanced.theme} (confidence: ${unifiedAnalysis.themeSelection.confidence})`);
+    }
+
+    // スライド数の調整
+    if (!originalRequest.slideCount || originalRequest.slideCountMode === 'auto') {
+      enhanced.slideCount = unifiedAnalysis.additionalSettings.suggestedSlideCount;
+      console.log(`📄 Slide count auto-selected: ${enhanced.slideCount}`);
+    }
+
+    // その他の設定
+    enhanced.needsPageNumbers = unifiedAnalysis.additionalSettings.needsPageNumbers;
+    enhanced.imageConsistencyLevel = unifiedAnalysis.additionalSettings.imageConsistencyLevel;
+
+    // コンテンツタイプ情報を追加（物語判定用）
+    enhanced.isStoryContent = unifiedAnalysis.contentAnalysis.isStoryContent;
+    enhanced.contentType = unifiedAnalysis.contentAnalysis.contentType;
+
+    return enhanced;
+  }
+
+  /**
    * 🧠 旧Context Intelligence による革新的リクエスト強化（廃止予定）
    */
   private enhanceRequestWithContext(
@@ -861,45 +908,48 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
   }
 
   /**
-   * 🔍 Auto強化記録の生成
-   * Auto分析によって何が変更されたかを記録
+   * 🔍 統合分析強化記録の生成
+   * 統合分析によって何が変更されたかを記録
    */
-  private getAutoEnhancements(
+  private getUnifiedEnhancements(
     original: EnhancedSlideRequest, 
     enhanced: EnhancedSlideRequest,
-    autoAnalysis: any
+    unifiedAnalysis: any
   ): any {
     const changes: any = {};
 
-    if (autoAnalysis.suggestedDesigner && original.selectedDesigner !== enhanced.selectedDesigner) {
+    if (unifiedAnalysis.designerSelection?.selectedDesigner && original.selectedDesigner !== enhanced.selectedDesigner) {
       changes.designerAutoSelected = {
         from: original.selectedDesigner || 'none',
         to: enhanced.selectedDesigner,
-        reason: 'Auto AI analysis based on content type'
+        reason: `Unified AI analysis: ${unifiedAnalysis.designerSelection.reason}`,
+        confidence: unifiedAnalysis.designerSelection.confidence
       };
     }
 
-    if (autoAnalysis.suggestedPurpose && original.purpose !== enhanced.purpose) {
+    if (unifiedAnalysis.purposeSelection?.selectedPurpose && original.purpose !== enhanced.purpose) {
       changes.purposeAutoSelected = {
         from: original.purpose || 'auto',
         to: enhanced.purpose,
-        reason: 'Auto AI analysis based on content type'
+        reason: `Unified AI analysis: ${unifiedAnalysis.purposeSelection.reason}`,
+        confidence: unifiedAnalysis.purposeSelection.confidence
       };
     }
 
-    if (autoAnalysis.suggestedTheme && original.theme !== enhanced.theme) {
+    if (unifiedAnalysis.themeSelection?.selectedTheme && original.theme !== enhanced.theme) {
       changes.themeAutoSelected = {
         from: original.theme || 'auto',
         to: enhanced.theme,
-        reason: 'Auto AI analysis based on content type'
+        reason: `Unified AI analysis: ${unifiedAnalysis.themeSelection.reason}`,
+        confidence: unifiedAnalysis.themeSelection.confidence
       };
     }
 
-    if (autoAnalysis.suggestedSlideCount && original.slideCount !== enhanced.slideCount) {
+    if (unifiedAnalysis.additionalSettings?.suggestedSlideCount && original.slideCount !== enhanced.slideCount) {
       changes.slideCountAutoSelected = {
         from: original.slideCount || 'auto',
         to: enhanced.slideCount,
-        reason: 'Auto AI analysis based on content complexity'
+        reason: `Unified AI analysis: ${unifiedAnalysis.additionalSettings.reasoning}`
       };
     }
 

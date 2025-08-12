@@ -5,6 +5,7 @@
 
 import type { MarpPresentation, MarpSlide } from './MarpContentService';
 import type { EnhancedSlideRequest } from './aiServiceInterface';
+import { contextIntelligenceResources } from '../../resources/prompts/contextIntelligenceResources';
 // Visual content decision is now handled by AI in the layout prompt
 
 export interface LayoutOptions {
@@ -56,10 +57,13 @@ export interface JSONPresentation {
 }
 
 export class MarpLayoutService {
+  constructor() {
+  }
+
   /**
-   * MarpプレゼンテーションからJSONレイアウト生成用プロンプトを構築
+   * 🔄 スライド毎のJSONレイアウト生成用プロンプトを構築（トークン制限対策）
    */
-  buildLayoutPrompt(marpPresentation: MarpPresentation, options: LayoutOptions = {}): string {
+  buildSingleSlideLayoutPrompt(slide: MarpSlide, slideIndex: number, options: LayoutOptions = {}): string {
     const {
       theme = 'professional',
       designer = 'The Academic Visualizer',
@@ -74,126 +78,105 @@ export class MarpLayoutService {
     // テーマ別の色彩設計
     const themeColors = this.getThemeColors(theme);
 
-    const slidesInfo = marpPresentation.slides.map((slide, index) => {
-      const slideType = index === 0 ? 'title_slide' : 'content_slide';
-      return `スライド${index + 1}: "${slide.title}" (${slideType})
-内容: ${slide.content.substring(0, 150)}${slide.content.length > 150 ? '...' : ''}${slide.imagePrompt ? `
+    const slideType = slideIndex === 0 ? 'title_slide' : 'content_slide';
+    const slideInfo = `"${slide.title}" (${slideType})
+内容: ${slide.content}${slide.imagePrompt ? `
 画像: ${slide.imagePrompt}` : ''}${slide.notes ? `
 ノート: ${slide.notes}` : ''}`;
-    }).join('\n\n');
 
-    return `以下のMarp形式プレゼンテーションを、視覚的に魅力的なJSONレイアウトに変換してください。
+    const imageInstruction = includeImages ? '画像レイヤーを適切に配置し、promptを設定' : '画像は含めない';
+    const slideNumber = slideIndex + 1;
 
-**デザイナー:** ${designer}
-**テーマ:** ${theme}
-**アスペクト比:** ${aspectRatio}
-
-**レイアウト指針:**
-${designerLayoutGuidance}
-
-**色彩設計:**
-${themeColors}
-
-**元のスライド情報:**
-${slidesInfo}
-
-**重要な要件:**
-1. **座標系:** x, y, width, height は全て0-100の数値（パーセンテージ座標系）
-2. **レイヤー構成:** 各スライドは2-4個のレイヤーで構成
-3. **画像配置:** ${includeImages ? '画像レイヤーを適切に配置し、promptを設定' : '画像は含めない'}
-4. **フォント階層:** タイトル(48-72px)、サブタイトル(28-36px)、本文(24-32px)
-5. **zIndex:** 重なり順序を適切に設定（高い値が前面）
-
-**レイアウトパターン:**
-- title_slide: 中央配置タイトル + サブタイトル
-- image_right: 左テキスト(50%) + 右画像(45%)
-- image_left: 左画像(45%) + 右テキスト(50%)
-- text_focus: 全幅テキスト + 小さな装飾画像
-- split_content: 上下または左右に内容を分割
-
-${customLayoutRules ? `**追加レイアウトルール:** ${customLayoutRules}` : ''}
-
-**出力形式（Minified JSON - スペース・改行なし）:**
-{"title":"プレゼンテーションタイトル","description":"プレゼンテーション説明","slides":[{"id":"slide-1","title":"タイトル","layers":[{"id":"title-layer-1","type":"text","content":"メインタイトル","x":10,"y":35,"width":80,"height":30,"fontSize":64,"textColor":"#1a365d","textAlign":"center","zIndex":2}],"background":"linear-gradient(135deg, #667eea 0%, #764ba2 100%)","aspectRatio":"${aspectRatio}","template":"title_slide","notes":"発表者ノート"}]}
-
-**絶対条件:**
-- JSON形式のみ出力（前後の説明文禁止）
-- Minified形式（スペース・改行なし）
-- 全座標は0-100の範囲
-- 各画像レイヤーにはpromptプロパティ必須（${includeImages ? '有効' : '無効'}）
-- トークン数最小化を優先`;
+    // TypeScriptリソースからプロンプトテンプレートを取得して変数を置換
+    let promptTemplate = contextIntelligenceResources.marpLayoutGeneration.singleSlideLayoutPrompt;
+    
+    return promptTemplate
+      .replace(/{designer}/g, designer)
+      .replace(/{theme}/g, theme)
+      .replace(/{aspectRatio}/g, aspectRatio)
+      .replace(/{designerLayoutGuidance}/g, designerLayoutGuidance)
+      .replace(/{themeColors}/g, themeColors)
+      .replace(/{slideInfo}/g, slideInfo)
+      .replace(/{imageInstruction}/g, imageInstruction)
+      .replace(/{customLayoutRules}/g, customLayoutRules)
+      .replace(/{slideNumber}/g, slideNumber.toString())
+      .replace(/{slideType}/g, slideType);
   }
 
   /**
-   * Enhanced Slide Requestからレイアウトオプションを変換
+   * 🆕 単一スライドJSONレスポンスのパース
    */
-  static fromEnhancedRequest(request: EnhancedSlideRequest): LayoutOptions {
-    return {
-      theme: request.theme,
-      designer: request.designer,
-      aspectRatio: '16:9', // デフォルト
-      includeImages: request.includeImages,
-      customLayoutRules: request.customInstructions,
-      purpose: request.purpose, // SVG/Image決定に使用
-    };
+  parseSingleSlideResponse(jsonResponse: string, slideIndex: number): JSONSlide {
+    try {
+      const validatedJson = this.validateAndFixJSON(jsonResponse);
+      const parsed = JSON.parse(validatedJson);
+      
+      // 単一スライドオブジェクトとして検証
+      if (!parsed.id) parsed.id = `slide_${slideIndex + 1}`;
+      if (!parsed.title) parsed.title = `Slide ${slideIndex + 1}`;
+      if (!parsed.layers) parsed.layers = [];
+      if (!parsed.background) parsed.background = '#f8f9fa';
+      if (!parsed.aspectRatio) parsed.aspectRatio = '16:9';
+      if (!parsed.template) parsed.template = slideIndex === 0 ? 'title_slide' : 'content_slide';
+      
+      // レイヤーの検証と修復
+      parsed.layers = parsed.layers.map((layer: any, layerIndex: number) => {
+        if (!layer.id) layer.id = `layer_${layerIndex + 1}`;
+        if (!layer.type) layer.type = 'text';
+        
+        // 座標の検証とクランプ
+        layer.x = this.clampCoordinate(layer.x, 0, 100);
+        layer.y = this.clampCoordinate(layer.y, 0, 100);
+        layer.width = this.clampCoordinate(layer.width, 1, 100);
+        layer.height = this.clampCoordinate(layer.height, 1, 100);
+        
+        return layer;
+      });
+      
+      return parsed as JSONSlide;
+      
+    } catch (error) {
+      console.error('Single slide JSON parsing error:', error);
+      throw new Error(`Failed to parse single slide JSON: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   /**
-   * 生成されたJSONレスポンスをパースして検証
+   * 従来の全スライド一括処理（後方互換性のため保持）
+   */
+  buildLayoutPrompt(marpPresentation: MarpPresentation, options: LayoutOptions = {}): string {
+    console.warn('⚠️ Using legacy buildLayoutPrompt - consider switching to buildSingleSlideLayoutPrompt');
+    // 最初のスライドのみで代用
+    if (marpPresentation.slides.length > 0) {
+      return this.buildSingleSlideLayoutPrompt(marpPresentation.slides[0], 0, options);
+    }
+    throw new Error('No slides available for layout generation');
+  }
+
+  /**
+   * レイアウトレスポンスのパース（従来版 - 後方互換性用）
    */
   parseLayoutResponse(jsonResponse: string): JSONPresentation {
     try {
-      // JSONをパース
-      const parsed = JSON.parse(jsonResponse);
+      const validatedJson = this.validateAndFixJSON(jsonResponse);
+      const parsed = JSON.parse(validatedJson);
       
-      // 基本構造の検証
-      if (!parsed.title || !parsed.slides || !Array.isArray(parsed.slides)) {
-        throw new Error('Invalid JSON structure: missing title or slides array');
+      if (!parsed.slides) {
+        // 単一スライドレスポンスの場合、配列にラップ
+        return {
+          title: parsed.title || 'Generated Presentation',
+          description: parsed.description || parsed.title || 'Generated Presentation',
+          slides: [parsed as JSONSlide]
+        };
       }
-      
-      // 各スライドの検証と正規化
-      const validatedSlides: JSONSlide[] = parsed.slides.map((slide: any, index: number) => {
-        if (!slide.id) {
-          slide.id = `slide-${index + 1}`;
-        }
-        
-        if (!slide.title) {
-          slide.title = `スライド ${index + 1}`;
-        }
-        
-        if (!slide.layers || !Array.isArray(slide.layers)) {
-          slide.layers = [];
-        }
-        
-        // レイヤーの検証
-        slide.layers = slide.layers.map((layer: any, layerIndex: number) => {
-          if (!layer.id) {
-            layer.id = `${slide.id}-layer-${layerIndex + 1}`;
-          }
-          
-          // 座標の検証と正規化
-          layer.x = this.clampCoordinate(layer.x, 0, 100);
-          layer.y = this.clampCoordinate(layer.y, 0, 100);
-          layer.width = this.clampCoordinate(layer.width, 1, 100);
-          layer.height = this.clampCoordinate(layer.height, 1, 100);
-          
-          // zIndexデフォルト
-          if (typeof layer.zIndex !== 'number') {
-            layer.zIndex = 1;
-          }
-          
-          return layer;
-        });
-        
-        // デフォルト値の設定
-        if (!slide.background) {
-          slide.background = '#ffffff';
-        }
-        
-        if (!slide.aspectRatio) {
-          slide.aspectRatio = '16:9';
-        }
-        
+
+      // 全スライドの検証
+      const validatedSlides = parsed.slides.map((slide: any, index: number) => {
+        if (!slide.id) slide.id = `slide_${index + 1}`;
+        if (!slide.title) slide.title = `Slide ${index + 1}`;
+        if (!slide.layers) slide.layers = [];
+        if (!slide.background) slide.background = '#f8f9fa';
+        if (!slide.aspectRatio) slide.aspectRatio = '16:9';
         if (!slide.template) {
           slide.template = index === 0 ? 'title_slide' : 'content_slide';
         }
@@ -218,71 +201,279 @@ ${customLayoutRules ? `**追加レイアウトルール:** ${customLayoutRules}`
     return Math.max(min, Math.min(max, num));
   }
 
+  /**
+   * JSON完全性チェックと修復
+   * トークン制限による途中終了JSONの検出と修復を試行
+   */
+  private validateAndFixJSON(jsonResponse: string): string {
+    const trimmed = jsonResponse.trim();
+    
+    console.log('🔍 JSON Validation: Checking response completeness...');
+    console.log('📊 Response length:', trimmed.length);
+    console.log('🏁 Ends with:', trimmed.slice(-10));
+    
+    // 1. 空レスポンスチェック
+    if (!trimmed) {
+      throw new Error('Empty JSON response received');
+    }
+    
+    // 2. JSON開始チェック
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+      console.log('⚠️ JSON does not start with { or [, looking for JSON start...');
+      const jsonStart = trimmed.indexOf('{');
+      if (jsonStart === -1) {
+        throw new Error('No valid JSON start found in response');
+      }
+      const extractedJson = trimmed.substring(jsonStart);
+      console.log('✅ Extracted JSON from position', jsonStart);
+      return this.validateAndFixJSON(extractedJson);
+    }
+    
+    // 3. 完全性チェック - 正常終了パターン
+    if (trimmed.endsWith('}') || trimmed.endsWith(']')) {
+      try {
+        JSON.parse(trimmed);
+        console.log('✅ JSON validation passed');
+        return trimmed;
+      } catch (error) {
+        console.log('❌ JSON parse failed despite proper ending:', error);
+        // パースエラーでも修復試行
+      }
+    }
+    
+    // 4. 不完全なJSON修復試行
+    console.log('🔧 Attempting JSON repair...');
+    
+    const fixedJson = this.attemptSimpleJSONFix(trimmed);
+    if (fixedJson) {
+      return fixedJson;
+    }
+    
+    // 5. より高度な修復試行
+    try {
+      JSON.parse(trimmed);
+      return trimmed;
+    } catch (parseError) {
+      const advancedFix = this.attemptAdvancedJSONFix(trimmed, parseError as Error);
+      if (advancedFix) {
+        return advancedFix;
+      }
+    }
+    
+    console.error('❌ All JSON repair attempts failed');
+    throw new Error(`Failed to parse or repair JSON response. Length: ${trimmed.length}`);
+  }
+
+  /**
+   * シンプルなJSON修復試行
+   * 括弧の不整合や未終了文字列の基本的修復
+   */
+  private attemptSimpleJSONFix(incompleteJson: string): string | null {
+    console.log('🔧 Attempting simple JSON repair...');
+    
+    let openBraces = 0;
+    let openBrackets = 0;
+    let inString = false;
+    let escapeNext = false;
+    
+    // 括弧の状態を分析
+    for (let i = 0; i < incompleteJson.length; i++) {
+      const char = incompleteJson[i];
+      
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+      
+      if (char === '\\') {
+        escapeNext = true;
+        continue;
+      }
+      
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+      
+      if (!inString) {
+        if (char === '{') openBraces++;
+        else if (char === '}') openBraces--;
+        else if (char === '[') openBrackets++;
+        else if (char === ']') openBrackets--;
+      }
+    }
+    
+    console.log(`🔍 Bracket analysis: braces=${openBraces}, brackets=${openBrackets}, inString=${inString}`);
+    
+    // 文字列の途中で終了している場合は修復困難
+    if (inString) {
+      console.log('⚠️ JSON ends inside a string - attempting string closure');
+      let fixed = incompleteJson + '"';
+      
+      // 再度ブラケット分析
+      return this.attemptSimpleJSONFix(fixed);
+    }
+    
+    // 必要な終了括弧を追加
+    let fixed = incompleteJson;
+    
+    // 配列の閉じ括弧を追加
+    for (let i = 0; i < openBrackets; i++) {
+      fixed += ']';
+    }
+    
+    // オブジェクトの閉じ括弧を追加
+    for (let i = 0; i < openBraces; i++) {
+      fixed += '}';
+    }
+    
+    // 修復後の検証
+    try {
+      JSON.parse(fixed);
+      console.log('✅ Simple repair successful');
+      return fixed;
+    } catch (error) {
+      console.log('❌ Simple repair failed:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 高度なJSON修復試行
+   * パースエラーの詳細情報を使用した修復
+   */
+  private attemptAdvancedJSONFix(jsonString: string, parseError: Error): string | null {
+    console.log('🔧 Attempting advanced JSON repair...');
+    console.log('📝 Parse error:', parseError.message);
+    
+    // エラーメッセージから位置情報を抽出
+    const positionMatch = parseError.message.match(/position (\d+)/);
+    if (positionMatch) {
+      const errorPos = parseInt(positionMatch[1]);
+      console.log(`📍 Error at position: ${errorPos}`);
+      
+      // エラー位置周辺の情報
+      const contextStart = Math.max(0, errorPos - 50);
+      const contextEnd = Math.min(jsonString.length, errorPos + 50);
+      const context = jsonString.substring(contextStart, contextEnd);
+      console.log(`🔍 Error context: "${context}"`);
+      
+      // エラー位置まででJSONを切り取り、修復試行
+      const truncatedJson = jsonString.substring(0, errorPos);
+      return this.attemptSimpleJSONFix(truncatedJson);
+    }
+    
+    // Unterminated string error の場合
+    if (parseError.message.includes('Unterminated string')) {
+      console.log('🔍 Detected unterminated string error');
+      
+      // 最後の不完全な文字列を除去して修復試行
+      const lastQuoteIndex = jsonString.lastIndexOf('"');
+      if (lastQuoteIndex > 0) {
+        const beforeLastQuote = jsonString.substring(0, lastQuoteIndex);
+        const nextQuoteIndex = beforeLastQuote.lastIndexOf('"');
+        if (nextQuoteIndex > 0) {
+          const truncatedJson = jsonString.substring(0, nextQuoteIndex + 1);
+          return this.attemptSimpleJSONFix(truncatedJson);
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * EnhancedSlideRequestからLayoutOptionsを生成
+   */
+  static fromEnhancedRequest(request: EnhancedSlideRequest): LayoutOptions {
+    return {
+      theme: request.theme,
+      designer: request.designer,
+      aspectRatio: request.aspectRatio || '16:9',
+      includeImages: true, // デフォルトで画像を含める
+      purpose: request.purpose
+    };
+  }
+
+  /**
+   * デザイナー別のレイアウト指針を取得
+   */
   private getDesignerLayoutGuidance(designer: string): string {
     const guidance = {
-      'The Emotional Storyteller': `
-- 感情的インパクトを重視した大胆なレイアウト
-- 画像を大きく配置（60-70%の領域）
-- フォントサイズは大きめで読みやすく
-- 暖色系の背景グラデーション
-- ストーリーの流れを視覚的に表現`,
-      
-      'The Corporate Strategist': `
-- ビジネス文書らしい整然としたレイアウト
-- 左右分割や上下分割を基本とする
-- データや図表スペースを確保
-- 落ち着いた色調（紺、グレー、白）
-- 読みやすさと信頼性を重視`,
-      
       'The Academic Visualizer': `
-- 学術的で体系的なレイアウト
-- テキストエリアを広めに確保
-- 図表や画像は補助的な配置
-- シンプルで清潔感のあるデザイン
-- 情報の階層構造を明確に表現`,
-      
-      'The Amateur Designer': `
-- 親しみやすく自由度の高いレイアウト
-- 非対称や動きのある配置も活用
-- ポップな色使いや楽しい要素
-- 画像とテキストのバランスを重視
-- 堅くならない自然な配置`
+- 情報密度: 高（多層レイヤー構成）
+- 体系化: 明確な情報階層とグルーピング
+- 構造的配置: グリッドベースの整然としたレイアウト
+- 視覚的要素: 図表、チャート、インフォグラフィック重視`,
+
+      'The Corporate Strategist': `
+- プロフェッショナル: 洗練されたビジネス文書スタイル
+- 効率性: 要点を明確に伝える簡潔な構成
+- 信頼性: 統一感のあるフォーマットとカラーパレット
+- データ重視: 数値、グラフ、実績の効果的な表示`,
+
+      'The Emotional Storyteller': `
+- 感情訴求: 魅力的なビジュアルとつかみのあるレイアウト
+- ストーリー性: 流れのある構成と視線誘導
+- 親しみやすさ: 温かみのある配色とフォント選択
+- インパクト: 大胆な画像配置と印象的な見出し`,
+
+      'amateur': `
+- 親しみやすい: カジュアルで気取らない配置
+- 実用性: 分かりやすく実践的な情報配置
+- 手作り感: 温かみのある非完璧な配置バランス
+- シンプル: 複雑すぎない、親近感のあるデザイン`
     };
-    
+
     return guidance[designer as keyof typeof guidance] || guidance['The Academic Visualizer'];
   }
 
+  /**
+   * テーマ別の色彩設計を取得
+   */
   private getThemeColors(theme: string): string {
     const colors = {
       'professional': `
-- メイン: #1a365d (濃紺)
-- サブ: #4a5568 (グレー)  
-- アクセント: #3182ce (青)
-- 背景: #ffffff (白) または linear-gradient(135deg, #667eea 0%, #764ba2 100%)`,
-      
-      'minimalist': `
-- メイン: #2d3748 (チャコール)
-- サブ: #718096 (薄グレー)
-- アクセント: #48bb78 (緑)
-- 背景: #f7fafc (極薄グレー) または #ffffff (白)`,
-      
+- メイン: #2c5aa0 (プロフェッショナルブルー)
+- サブ: #6c757d (ニュートラルグレー)  
+- アクセント: #28a745 (信頼のグリーン)
+- 背景: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)`,
+
       'academic': `
-- メイン: #2c5282 (アカデミックブルー)
-- サブ: #4a5568 (グレー)
-- アクセント: #805ad5 (紫)
-- 背景: #ffffff (白) または #f8f9fa (極薄グレー)`,
-      
+- メイン: #495057 (アカデミックグレー)
+- サブ: #6f42c1 (学術パープル)
+- アクセント: #fd7e14 (知的オレンジ)
+- 背景: linear-gradient(135deg, #ffffff 0%, #f1f3f5 100%)`,
+
       'creative': `
-- メイン: #6b46c1 (紫)
-- サブ: #ec4899 (ピンク)
-- アクセント: #10b981 (エメラルド)
-- 背景: linear-gradient(135deg, #667eea 0%, #764ba2 100%) または #ffffff`,
-      
+- メイン: #e83e8c (クリエイティブピンク)
+- サブ: #6610f2 (アーティスティックバイオレット)
+- アクセント: #20c997 (フレッシュティール)
+- 背景: linear-gradient(135deg, #fff3cd 0%, #f8d7da 100%)`,
+
+      'storytelling': `
+- メイン: #fd7e14 (ストーリーオレンジ)
+- サブ: #6c757d (ナラティブグレー)
+- アクセント: #20c997 (エモーショナルティール)
+- 背景: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%)`,
+
+      'minimalist': `
+- メイン: #212529 (ミニマルブラック)
+- サブ: #6c757d (サブトルグレー)  
+- アクセント: #007bff (クリーンブルー)
+- 背景: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)`,
+
+      'vibrant': `
+- メイン: #dc3545 (バイブラントレッド)
+- サブ: #ffc107 (エナジェティックイエロー)
+- アクセント: #28a745 (ライブリーグリーン)
+- 背景: linear-gradient(135deg, #ff6b6b 0%, #4ecdc4 100%)`,
+
       'tech_modern': `
 - メイン: #1a202c (ダーク)
 - サブ: #4a5568 (グレー)
 - アクセント: #00d4aa (ターコイズ)
-- 背景: linear-gradient(135deg, #1e3a8a 0%, #3730a3 100%)`,
+- 背景: linear-gradient(135deg, #1e3a8a 0%, #3730a3 100%)`
     };
     
     return colors[theme as keyof typeof colors] || colors['professional'];
@@ -304,76 +495,155 @@ ${customLayoutRules ? `**追加レイアウトルール:** ${customLayoutRules}`
     
     const enhancedPrompt = basePrompt + `
 
-🎯 **重要：コンテキストに基づく視覚コンテンツ戦略**
+**🎨 視覚的コンテンツの自動判断指針:**
 
-**プレゼンテーション用途**: ${options.purpose || 'general'} - ${purposeContext}
-**テーマスタイル**: ${options.theme || 'professional'} - ${themeContext}
+**用途コンテキスト:**
+${purposeContext}
 
-上記の用途とテーマを考慮し、各スライドで視覚要素が必要な場合は以下の判断基準に従ってください：
+**テーマコンテキスト:** 
+${themeContext}
 
-**SVG適用判断基準**:
-1. **ビジネス・学術・技術系**: データ表現、プロセス図、概念図、構造図 → 積極的にSVG使用
-2. **教育・解説系**: 理解促進のための図解、手順説明 → SVG推奨  
-3. **ストーリー・創作系**: 装飾的な要素以外は基本的にImage優先
-4. **子供向け**: 温かみのあるImage中心、必要最小限のSVG
+**SVG vs 画像の判断基準:**
 
-**SVG生成すべき内容例**:
-- 各種グラフ・チャート（売上、比較、推移など）
-- フローチャート・プロセス図  
-- 組織図・関係図・構造図
-- ER図・システム図・アーキテクチャ図
-- 概念図・理論図・モデル図
-- アイコン・記号・矢印
+**📊 SVG生成が適している場合:**
+- データ可視化（グラフ、チャート、図表）
+- 概念図、フローチャート、組織図
+- アイコン、シンプルなイラスト
+- 抽象的な表現（矢印、幾何学模様）
 
-**Image使用すべき内容例**:
-- 写真・風景・人物
-- 具体的な製品・物品
-- 雰囲気作りの背景
-- リアルな表現が必要なもの
+**📸 画像生成が適している場合:**
+- 実在する物体、人物、風景
+- 複雑なテクスチャや写実的表現
+- 商品、料理、建物などの具体的なもの
+- 感情表現や雰囲気重視のビジュアル
 
-**出力形式**:
-- SVG必要時: "type": "svg", "content": "[実際のSVGコード]", "prompt": "SVG生成指示"
-- Image必要時: "type": "image", "src": "", "prompt": "画像生成指示"
+**🛠️ SVG生成時の仕様:**
+- viewBox="0 0 400 300" を基準とする
+- レスポンシブ対応のSVG
+- 適切な色彩（テーマカラーを活用）
+- 簡潔で理解しやすいデザイン
 
-**重要**: 用途が「${options.purpose || 'general'}」であることを常に考慮し、不適切な視覚要素は避けてください。SVGが必要と判断した場合は、promptではなく実際のSVGコードをcontentに含めて出力してください。`;
+**各スライドの画像判断:**
+${this.buildSlideImageAnalysis(marpPresentation)}
+
+**重要:** 画像タイプを適切に判断し、以下のように設定してください：
+- SVG場合: "type": "svg", "content": "<svg>...</svg>"
+- 画像場合: "type": "image", "prompt": "生成用プロンプト"
+`;
 
     return enhancedPrompt;
   }
 
-  /**
-   * 用途コンテキストの構築
-   */
   private buildPurposeContext(purpose?: string): string {
     const contexts = {
-      'business_presentation': 'データ・プロセス・構造の可視化が重要。グラフや図表でSVG活用推奨',
-      'academic_research': '理論・データ・関係性の正確な表現が必須。SVG図表が効果的',
-      'educational_content': '理解促進のための分かりやすい図解が重要。概念図はSVG推奨', 
-      'tutorial_guide': '手順・プロセスの明確な表現が必要。フローチャートはSVG最適',
-      'marketing_pitch': 'インパクトのある表現が重要。データ表現はSVG、イメージはPhoto',
-      'technical_documentation': '正確で詳細な技術図表が必要。システム図・ER図はSVG必須',
-      'storytelling': '物語性と感情的表現が重要。基本的にImage中心',
-      'children_content': '親しみやすい表現が重要。温かみのあるImage中心、最小限のSVG',
-      'training_material': '理解しやすい図解が重要。プロセス・概念図はSVG推奨'
+      '教育・学習支援': '学習効果を高める視覚的補助、理解促進のための図解重視',
+      'ビジネス・営業プレゼンテーション': 'プロフェッショナルな印象、データの説得力、信頼性重視',
+      'ストーリーテリング・物語の共有': '感情に訴える視覚的表現、物語性のある構成',
+      '研修・トレーニング資料': '実践的で分かりやすい図解、手順の可視化',
+      'レポート・報告書': '正確なデータ表現、客観的で信頼できる視覚化',
+      'その他': 'バランスの取れた汎用的な視覚表現'
     };
-    
-    return contexts[purpose as keyof typeof contexts] || 'バランスの取れた視覚表現を心がける';
+
+    return contexts[purpose as keyof typeof contexts] || contexts['その他'];
+  }
+
+  private buildThemeContext(theme?: string): string {
+    const contexts = {
+      'academic': 'シンプルで洗練された学術的表現、情報の明確な整理',
+      'professional': 'ビジネス標準の落ち着いた表現、信頼性重視',
+      'creative': '創造性と独創性を重視した大胆な表現',
+      'storytelling': '物語性と感情的つながりを重視した温かい表現',
+      'minimalist': 'ミニマルで洗練された、要素を絞った表現',
+      'vibrant': 'エネルギッシュで活動的な、注目を引く表現'
+    };
+
+    return contexts[theme as keyof typeof contexts] || contexts['professional'];
+  }
+
+  private buildSlideImageAnalysis(presentation: MarpPresentation): string {
+    return presentation.slides.map((slide, index) => {
+      const slideType = index === 0 ? 'タイトルスライド' : 'コンテンツスライド';
+      return `**スライド${index + 1}** (${slideType}): "${slide.title}"
+- 内容: ${slide.content.substring(0, 100)}${slide.content.length > 100 ? '...' : ''}
+- 画像提案: ${slide.imagePrompt || '画像なし'}`;
+    }).join('\n');
   }
 
   /**
-   * テーマコンテキストの構築  
+   * フォールバック用のレイアウトプロンプト（YAML読み込み失敗時）
    */
-  private buildThemeContext(theme?: string): string {
-    const contexts = {
-      'professional': '洗練されたビジネス表現。データ可視化でSVG活用',
-      'academic': '学術的で正確な表現。理論図・データ図はSVG重要',
-      'minimalist': 'シンプルで要点を絞った表現。必要最小限の効果的なSVG',
-      'creative': '創造的で自由な表現。バランスの良いSVG/Image混在',
-      'technical': '技術的で詳細な表現。システム・アーキテクチャ図でSVG必須',
-      'storytelling': '物語性重視。感情的なImage中心',
-      'children_bright': '子供向けの明るい表現。Image中心、補助的SVG',
-      'medical': '医学的精度が重要。正確な図表でSVG活用'
-    };
-    
-    return contexts[theme as keyof typeof contexts] || 'テーマに適した適切な視覚表現';
+  private buildFallbackLayoutPrompt(slide: MarpSlide, slideIndex: number, options: LayoutOptions = {}): string {
+    const {
+      theme = 'professional',
+      designer = 'The Academic Visualizer',
+      aspectRatio = '16:9',
+      includeImages = true,
+      customLayoutRules = ''
+    } = options;
+
+    const designerLayoutGuidance = this.getDesignerLayoutGuidance(designer);
+    const themeColors = this.getThemeColors(theme);
+
+    const slideType = slideIndex === 0 ? 'title_slide' : 'content_slide';
+    const slideInfo = `"${slide.title}" (${slideType})
+内容: ${slide.content}${slide.imagePrompt ? `
+画像: ${slide.imagePrompt}` : ''}${slide.notes ? `
+ノート: ${slide.notes}` : ''}`;
+
+    return `以下の単一Marpスライドを、視覚的に魅力的なJSONレイアウトに変換してください。
+
+**デザイナー:** ${designer}
+**テーマ:** ${theme}
+**アスペクト比:** ${aspectRatio}
+
+**レイアウト指針:**
+${designerLayoutGuidance}
+
+**色彩設計:**
+${themeColors}
+
+**スライド情報:**
+${slideInfo}
+
+**重要な要件:**
+1. **座標系:** x, y, width, height は全て0-100の数値（パーセンテージ座標系）
+2. **レイヤー構成:** 各スライドは2-4個のレイヤーで構成
+3. **画像配置:** ${includeImages ? '画像レイヤーを適切に配置し、promptを設定' : '画像は含めない'}
+4. **フォント階層:** タイトル(48-72px)、サブタイトル(28-36px)、本文(24-32px)
+5. **zIndex:** 重なり順序を適切に設定（高い値が前面）
+
+**レイアウトパターン:**
+- title_slide: 中央配置タイトル + サブタイトル
+- image_right: 左テキスト(50%) + 右画像(45%)
+- image_left: 左画像(45%) + 右テキスト(50%)
+- text_only: 全幅テキスト配置
+- split_content: 上下または左右分割レイアウト
+
+${customLayoutRules}
+
+必ず以下のJSON形式で単一スライドとして回答してください:
+
+{
+  "id": "slide_${slideIndex + 1}",
+  "title": "スライドタイトル",
+  "layers": [
+    {
+      "id": "layer_1",
+      "type": "text",
+      "content": "テキスト内容",
+      "x": 10,
+      "y": 20,
+      "width": 80,
+      "height": 15,
+      "fontSize": 48,
+      "textColor": "#333333",
+      "textAlign": "center",
+      "zIndex": 1
+    }
+  ],
+  "background": "#f8f9fa",
+  "aspectRatio": "${aspectRatio}",
+  "template": "${slideType}"
+};`;
   }
 }

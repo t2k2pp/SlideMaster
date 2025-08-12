@@ -185,8 +185,7 @@ You must respond with a valid JSON object that represents a complete presentatio
     return this.generateText({
       prompt,
       systemPrompt,
-      temperature: 0.8,
-      maxTokens: 8000
+      temperature: 0.8
     });
   }
 
@@ -207,8 +206,7 @@ ${currentContent}
     return this.generateText({
       prompt,
       systemPrompt: systemPrompts[improvementType],
-      temperature: 0.6,
-      maxTokens: 2048
+      temperature: 0.6
     });
   }
 
@@ -229,8 +227,7 @@ ${slideContent}
     return this.generateText({
       prompt,
       systemPrompt,
-      temperature: 0.5,
-      maxTokens: 3072
+      temperature: 0.5
     });
   }
 
@@ -259,8 +256,7 @@ ${content}
     return this.generateText({
       prompt,
       systemPrompt,
-      temperature: 0.3,
-      maxTokens: 8000
+      temperature: 0.3
     });
   }
 }

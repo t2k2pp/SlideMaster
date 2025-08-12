@@ -4,6 +4,8 @@
 // =================================================================
 
 import type { DesignerType, PresentationPurpose, PresentationTheme } from '../../types';
+import * as fs from 'fs';
+import * as yaml from 'js-yaml';
 
 export interface ContextAnalysis {
   suggestedDesigner: DesignerType;
@@ -19,14 +21,125 @@ export interface ContextAnalysis {
   imageConsistencyLevel?: 'high' | 'medium' | 'low';
 }
 
+// 🆕 統合分析結果の型定義
+export interface UnifiedAnalysisResult {
+  contentAnalysis: {
+    contentType: 'story' | 'business' | 'academic' | 'creative' | 'technical';
+    isStoryContent: boolean;
+    confidence: number;
+    reasoning: string;
+  };
+  designerSelection: {
+    selectedDesigner: DesignerType;
+    reason: string;
+    confidence: number;
+  };
+  purposeSelection: {
+    selectedPurpose: PresentationPurpose;
+    reason: string;
+    confidence: number;
+  };
+  themeSelection: {
+    selectedTheme: PresentationTheme;
+    reason: string;
+    confidence: number;
+  };
+  additionalSettings: {
+    suggestedSlideCount: number;
+    needsPageNumbers: boolean;
+    imageConsistencyLevel: 'low' | 'medium' | 'high';
+    reasoning: string;
+  };
+}
+
 /**
  * 革新的AIコンテキスト認識エンジン
  * トピックを深層分析し、最適な作成戦略を推定
+ * 
+ * 🚨 CRITICAL CHANGE: キーワードマッチング完全排除
+ * - 全てAI分析ベースに切り替え
+ * - プロンプトはYAMLリソース化
+ * - ルールベース判定は廃止
  */
 export class ContextIntelligenceEngine {
+  constructor() {
+  }
+
+  /**
+   * 🎯 リソースベースプロンプト構築：コンテンツタイプ分析
+   */
+  private buildContentTypePrompt(topic: string): string {
+    const config = contextIntelligenceResources.contentTypeAnalysis;
+    let prompt = config.systemPrompt + `\n\nリクエスト: "${topic}"\n\n以下から1つ選択してください：\n`;
+    
+    // カテゴリ説明を動的構築
+    Object.entries(config.categories).forEach(([key, category]: [string, any]) => {
+      prompt += `- ${key}: ${category.description}\n`;
+      if (category.examples) {
+        prompt += `  例: ${category.examples.map((ex: string) => `"${ex}"`).join(', ')}\n`;
+      }
+      if (category.specialRules) {
+        category.specialRules.forEach((rule: string) => {
+          prompt += `  ⚠️重要: ${rule}\n`;
+        });
+      }
+    });
+
+    // 分類ヒントを追加
+    prompt += `\nキーワード例による分類ヒント:\n`;
+    Object.entries(config.classificationHints).forEach(([key, hint]: [string, any]) => {
+      prompt += `- ${key}: ${hint}\n`;
+    });
+
+    prompt += `\n${config.responseFormat}`;
+    return prompt;
+  }
+
+  /**
+   * フォールバック用プロンプト（YAMLロード失敗時）
+   */
+  private buildFallbackContentTypePrompt(topic: string): string {
+    return `以下のリクエストのコンテンツタイプを分析してください。
+
+リクエスト: "${topic}"
+
+以下から1つ選択してください：
+- story: 物語・ストーリー・童話・民話
+- technical: AI・技術・システム・エンジニアリング・プログラミング
+- business: ビジネス・企業・営業・研修・マーケティング
+- academic: 学術・研究・教育・一般調査・解説・料理レシピ・実用ガイド
+- creative: 芸術・デザイン・創作活動
+
+⚠️重要：料理・レシピ・チャーシューは必ずacademicとして分類すること
+
+回答形式: 選択したカテゴリ名のみを英語で回答（例: technical）`;
+  }
   
   /**
-   * 🎯 Auto項目専用のコンテキスト分析
+   * 🚀 統合AI分析 - 1回のAPIコールで全て分析
+   * キーワードマッチングを排除し、生成AIによる包括的判定を実現
+   */
+  async analyzeWithUnifiedAPI(topic: string, request: any): Promise<UnifiedAnalysisResult> {
+    console.log('🚀 Starting unified AI analysis:', topic);
+    
+    try {
+      const analysisPrompt = this.buildUnifiedAnalysisPrompt(topic, request);
+      const aiService = await this.getAIService();
+      const rawResponse = await aiService.generateText(analysisPrompt);
+      
+      // JSON解析を試行
+      const analysisResult = this.parseUnifiedAnalysisResponse(rawResponse);
+      console.log('✅ Unified AI analysis completed:', analysisResult);
+      
+      return analysisResult;
+    } catch (error) {
+      console.error('❌ Unified AI analysis failed, using fallback:', error);
+      return this.createFallbackUnifiedAnalysis(topic, request);
+    }
+  }
+
+  /**
+   * 🎯 Auto項目専用のコンテキスト分析（レガシー対応）
    * 指定されたAuto項目のみをAI分析し、ユーザー指定項目は尊重
    */
   async analyzeAutoSettings(topic: string, request: any): Promise<{
@@ -175,30 +288,19 @@ export class ContextIntelligenceEngine {
 
   /**
    * 🔄 コンテンツタイプ分類（リトライ機能付き）
+   * 🚨 CHANGE: YAMLリソースベースプロンプト使用
    */
   private async classifyContentTypeWithRetry(topic: string, maxRetries: number = 3): Promise<ContextAnalysis['contentType']> {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         console.log(`🔍 Content Type Analysis - Attempt ${attempt}/${maxRetries}`);
         
-        const prompt = `以下のリクエストのコンテンツタイプを分析してください。
-
-リクエスト: "${topic}"
-
-以下から1つ選択してください：
-- story: 物語・ストーリー・童話・民話
-- technical: AI・技術・システム・エンジニアリング・プログラミング
-- business: ビジネス・企業・営業・研修・マーケティング
-- academic: 学術・研究・教育・一般調査・解説
-- creative: 芸術・デザイン・創作活動
-
-回答形式: 選択したカテゴリ名のみを英語で回答（例: technical）`;
+        const prompt = this.buildContentTypePrompt(topic);
 
         const { getTextAIService } = await import('./unifiedAIService');
         const aiService = getTextAIService();
         
         const response = await aiService.generateText(prompt, {
-          maxTokens: 8000,
           temperature: 0.1
         });
         
@@ -237,7 +339,8 @@ export class ContextIntelligenceEngine {
 - "The Emotional Storyteller": 物語・感動系
 - "The Corporate Strategist": ビジネス・企業系  
 - "logical": 技術・論理的・AI系
-- "The Academic Visualizer": 学術・教育系
+- "The Academic Visualizer": 学術・教育系（理論・研究）
+- "amateur": 実用指導・料理・家庭的な内容
 - "creative": 芸術・創作系
 
 回答形式: デザイナー名のみを英語で回答（例: logical）`;
@@ -246,7 +349,6 @@ export class ContextIntelligenceEngine {
         const aiService = getTextAIService();
         
         const response = await aiService.generateText(prompt, {
-          maxTokens: 8000,
           temperature: 0.1
         });
         
@@ -303,7 +405,6 @@ export class ContextIntelligenceEngine {
         const aiService = getTextAIService();
         
         const response = await aiService.generateText(prompt, {
-          maxTokens: 8000,
           temperature: 0.1
         });
         
@@ -356,7 +457,6 @@ export class ContextIntelligenceEngine {
         const aiService = getTextAIService();
         
         const response = await aiService.generateText(prompt, {
-          maxTokens: 8000,
           temperature: 0.1
         });
         
@@ -411,7 +511,6 @@ export class ContextIntelligenceEngine {
         const aiService = getTextAIService();
         
         const response = await aiService.generateText(prompt, {
-          maxTokens: 8000,
           temperature: 0.1
         });
         
@@ -446,7 +545,7 @@ export class ContextIntelligenceEngine {
 
   private parseDesignerResponse(response: string): DesignerType | null {
     const cleanResponse = response.trim();
-    const validDesigners: DesignerType[] = ['The Emotional Storyteller', 'The Corporate Strategist', 'logical', 'The Academic Visualizer', 'creative'];
+    const validDesigners: DesignerType[] = ['The Emotional Storyteller', 'The Corporate Strategist', 'logical', 'The Academic Visualizer', 'amateur', 'creative'];
     return validDesigners.find(designer => cleanResponse.includes(designer)) || null;
   }
 
@@ -479,7 +578,6 @@ export class ContextIntelligenceEngine {
     const aiService = getTextAIService();
     
     const response = await aiService.generateText(analysisPrompt, {
-      maxTokens: 8000,
       temperature: 0.2 // 多少の創造性を許可
     });
     
@@ -497,7 +595,6 @@ export class ContextIntelligenceEngine {
     const aiService = getTextAIService();
     
     const response = await aiService.generateText(classificationPrompt, {
-      maxTokens: 8000,
       temperature: 0.1 // 一貫性重視
     });
     
@@ -522,9 +619,9 @@ export class ContextIntelligenceEngine {
 3. **business** - ビジネス・経営・研修・マーケティング・企業関連
    例: "営業戦略の提案", "クリティカルシンキング研修資料", "売上分析レポート", "リーダーシップ研修"
 
-4. **academic** - 学術・研究・教育・実用的指導
-   例: "環境問題の調査", "歴史の解説", "プランクのやり方", "料理の作り方", "使い方ガイド"
-   ⚠️重要: 「やり方」「方法」「手順」の実用解説も academic（実践教育）
+4. **academic** - 学術・研究・教育・実用的指導・料理レシピ
+   例: "環境問題の調査", "歴史の解説", "プランクのやり方", "料理の作り方", "チャーシューレシピ", "使い方ガイド"
+   ⚠️重要: 「やり方」「方法」「手順」「料理」「レシピ」の実用解説は全て academic（実践教育）
 
 5. **creative** - 芸術・デザイン・創作活動・表現
    例: "アート作品の紹介", "デザインコンセプト", "創作活動の発表"
@@ -542,6 +639,7 @@ export class ContextIntelligenceEngine {
 - 物語作成系: 桃太郎、童話、ストーリー、体験談 → story
 - 学術・教育系: 環境、歴史、科学、理論 → academic
 - 実用指導系: プランク、料理、使い方、やり方、手順、方法 → academic（実践教育として）
+- 料理系: チャーシュー、レシピ、調理、食材、作り方、料理法 → academic（料理教育として）
 
 回答形式: カテゴリ名のみを英語で回答してください（story, technical, business, academic, creative のいずれか）`;
   }
@@ -722,176 +820,122 @@ export class ContextIntelligenceEngine {
   }
 
   /**
-   * フォールバック用キーワードベース分類（簡略版）
+   * 🚨 REMOVED: 確率的デザイナー選択システム削除
+   * 
+   * このメソッドは完全にキーワードマッチングベースだったため削除
+   * 代替：AI分析ベースの統合デザイナー選択に置き換え
    */
-  private keywordBasedFallback(topic: string): ContextAnalysis['contentType'] {
-    const topicLower = topic.toLowerCase();
-    
-    if (topicLower.includes('の話を作成') || topicLower.includes('物語を作')) {
-      return 'story';
-    }
-    if ((topicLower.includes('について') || topicLower.includes('を調べ')) && 
-        (topicLower.includes('gpt') || topicLower.includes('ai') || topicLower.includes('技術'))) {
-      return 'technical';
-    }
-    if (topicLower.includes('研修') || topicLower.includes('ビジネス') || topicLower.includes('経営')) {
-      return 'business';
-    }
-    
-    return 'academic';
-  }
 
   /**
-   * 明確な物語作成依頼の判定
+   * 🚨 REMOVED: Purpose自動選択システム削除
+   * 
+   * このメソッドも完全にキーワードマッチングベースだったため削除
+   * 代替：AI分析ベースの統合Purpose選択に置き換え
    */
-  private isExplicitStoryRequest(topic: string): boolean {
-    const storyPatterns = [
-      'の話を作成', 'の物語を作', '物語を作成', 'ストーリーを作',
-      '童話を作', 'お話を作', '体験談を', '思い出話',
-      'むかしむかし', '昔話'
+
+  /**
+   * 🎯 Phase 3.2: 不適切な組み合わせ検出・修正システム
+   * デザイナーとPurposeの組み合わせの適合性をチェック
+   */
+  validateDesignerPurposeCombination(
+    designer: DesignerType, 
+    purpose: PresentationPurpose, 
+    topic: string
+  ): { isValid: boolean; suggestedPurpose?: PresentationPurpose; reason?: string } {
+    
+    // 不適切な組み合わせの検出と修正
+    const inappropriateCombinations = [
+      {
+        condition: designer === 'The Emotional Storyteller' && purpose === 'technical_documentation',
+        suggestedPurpose: 'storytelling' as PresentationPurpose,
+        reason: 'Emotional Storytellerは技術文書よりもストーリーテリングに適しています'
+      },
+      {
+        condition: designer === 'The Corporate Strategist' && purpose === 'storytelling',
+        suggestedPurpose: 'business_presentation' as PresentationPurpose,
+        reason: 'Corporate Strategistはストーリーテリングよりもビジネスプレゼンに適しています'
+      },
+      {
+        condition: designer === 'amateur' && purpose === 'academic_research',
+        suggestedPurpose: 'tutorial_guide' as PresentationPurpose,
+        reason: 'Amateur Designerは学術研究よりもチュートリアル形式に適しています'
+      },
+      {
+        condition: designer === 'The Academic Visualizer' && purpose === 'storytelling' && !topic.toLowerCase().includes('物語'),
+        suggestedPurpose: 'educational_content' as PresentationPurpose,
+        reason: 'Academic Visualizerは物語以外ではストーリーテリングよりも教育コンテンツに適しています'
+      }
     ];
     
-    return storyPatterns.some(pattern => topic.includes(pattern));
+    for (const combo of inappropriateCombinations) {
+      if (combo.condition) {
+        return {
+          isValid: false,
+          suggestedPurpose: combo.suggestedPurpose,
+          reason: combo.reason
+        };
+      }
+    }
+    
+    return { isValid: true };
   }
 
   /**
-   * 調査・説明・教材作成依頼の判定
+   * 🚨 REMOVED: キーワードマッチング削除
+   * フォールバック用AI分析（キーワードマッチング廃止）
    */
-  private isResearchOrExplanationRequest(topic: string): boolean {
-    const researchPatterns = [
-      // 調査・分析系
-      'について調べ', 'について詳しく調べ', 'を調査',
-      'について分析', 'について説明', 'について教え',
-      'とは何か', 'の仕組み', 'について解説',
-      'をまとめ', 'について整理', 'を研究',
-      // 教材・資料作成系（重要な追加）
-      '研修資料を', '教材を', '説明資料を', '学習資料を',
-      '研修を', 'セミナー資料を', '講義資料を', '授業資料を',
-      'について研修', 'の研修', '資料を用意', '資料を作成'
-    ];
-    
-    const matchedPattern = researchPatterns.find(pattern => topic.includes(pattern));
-    if (matchedPattern) {
-      console.log('🔍 Research/Educational pattern matched:', matchedPattern);
+  private async aiBasedFallback(topic: string): Promise<ContextAnalysis['contentType']> {
+    console.log('⚠️ Using AI-based fallback analysis');
+    try {
+      // 簡略版AI分析
+      const prompt = this.buildFallbackContentTypePrompt(topic);
+      const { getTextAIService } = await import('./unifiedAIService');
+      const aiService = getTextAIService();
+      
+      const response = await aiService.generateText(prompt, {
+        temperature: 0.1
+      });
+      
+      return this.parseContentTypeResponse(response.trim()) || 'academic';
+    } catch (error) {
+      console.error('❌ AI fallback failed:', error);
+      // 最後の手段：デフォルト
+      return 'academic';
     }
-    
-    return researchPatterns.some(pattern => topic.includes(pattern));
   }
 
   /**
-   * 技術キーワードの存在判定
+   * 🚨 REMOVED: 全てのキーワードマッチングメソッド削除
+   * 
+   * 以下のメソッドは完全に削除されました：
+   * - isExplicitStoryRequest()
+   * - isResearchOrExplanationRequest()  
+   * - hasTechnicalKeywords()
+   * - hasBusinessKeywords()
+   * - hasCreativeKeywords()
+   * 
+   * 理由：ユーザーから明確に「やめて」と指示されたため
+   * 代替：全てAI分析ベースに切り替え
    */
-  private hasTechnicalKeywords(topic: string): boolean {
-    const techKeywords = [
-      'ai', 'gpt', '人工知能', '機械学習', 'ml', 'deep learning',
-      'api', 'プログラミング', 'システム', 'ソフトウェア', 
-      'アルゴリズム', '技術', 'テクノロジー', 'it', 'エンジニア'
-    ];
-    
-    const matchedKeywords = techKeywords.filter(keyword => topic.includes(keyword));
-    if (matchedKeywords.length > 0) {
-      console.log('💻 Technical keywords found:', matchedKeywords);
-    }
-    
-    return techKeywords.some(keyword => topic.includes(keyword));
-  }
 
   /**
-   * ビジネスキーワードの存在判定  
+   * 🚨 SIMPLIFIED: 感情トーン分析簡略化
+   * キーワードマッチング廃止、AI分析結果ベースのマッピングのみ
    */
-  private hasBusinessKeywords(topic: string): boolean {
-    const businessKeywords = [
-      // 基本ビジネス用語
-      '売上', '利益', '戦略', 'マーケティング', '営業',
-      '企業', '会社', 'ビジネス', '経営', 'roi',
-      '提案', 'プロジェクト', 'kpi', '業績', '成果',
-      '市場', '業界', '競合', '事業',
-      // 研修・スキル系（重要な追加）
-      '研修', '人材育成', 'スキル', 'トレーニング',
-      'セミナー', 'ワークショップ', '人事', '組織',
-      'リーダーシップ', 'マネジメント', 'チーム',
-      'クリティカルシンキング', '論理的思考', '問題解決',
-      'コミュニケーション', 'プレゼンテーション'
-    ];
-    
-    const matchedKeywords = businessKeywords.filter(keyword => topic.includes(keyword));
-    if (matchedKeywords.length > 0) {
-      console.log('💼 Business keywords found:', matchedKeywords);
+  private analyzeEmotionalTone(contentType: ContextAnalysis['contentType']): ContextAnalysis['emotionalTone'] {
+    // AI分析結果ベースのシンプルマッピング
+    switch (contentType) {
+      case 'story':
+        return 'emotional';
+      case 'creative':
+        return 'inspiring';
+      case 'technical':
+        return 'logical';
+      case 'business':
+      case 'academic':
+      default:
+        return 'professional';
     }
-    
-    return businessKeywords.some(keyword => topic.includes(keyword));
-  }
-
-  /**
-   * 創作キーワードの存在判定
-   */
-  private hasCreativeKeywords(topic: string): boolean {
-    const creativeKeywords = [
-      'アート', 'デザイン', '創作', 'クリエイティブ',
-      '芸術', '表現', '美', '感性', 'インスピレーション',
-      '絵画', '彫刻', '音楽', '映画', '小説', '詩'
-    ];
-    
-    // ビジネス・研修文脈では創作系と判定しない
-    const isBusinessContext = this.hasBusinessKeywords(topic) || 
-                             this.isResearchOrExplanationRequest(topic);
-    
-    if (isBusinessContext) {
-      console.log('🎨 Creative keywords ignored due to business/educational context');
-      return false;
-    }
-    
-    const matchedKeywords = creativeKeywords.filter(keyword => topic.includes(keyword));
-    if (matchedKeywords.length > 0) {
-      console.log('🎨 Creative keywords found:', matchedKeywords);
-    }
-    
-    return creativeKeywords.some(keyword => topic.includes(keyword));
-  }
-
-  /**
-   * 感情トーンの分析
-   */
-  private analyzeEmotionalTone(topic: string): ContextAnalysis['emotionalTone'] {
-    // 感情的
-    if (this.matchesPatterns(topic, [
-      '感動', '涙', '心', '愛', '友情', '家族',
-      '温かい', '優しい', '悲しい', '嬉しい', '幸せ',
-      '物語', 'お話', '思い出', '体験'
-    ])) {
-      return 'emotional';
-    }
-
-    // インスピレーショナル
-    if (this.matchesPatterns(topic, [
-      '夢', '希望', '未来', '可能性', '挑戦', '成長',
-      '目標', 'ビジョン', '変化', '革新', '新しい'
-    ])) {
-      return 'inspiring';
-    }
-
-    // 遊び心
-    if (this.matchesPatterns(topic, [
-      '楽しい', '面白い', 'ユニーク', 'ポップ',
-      '童話', '子ども', 'カラフル', 'かわいい'
-    ])) {
-      return 'playful';
-    }
-
-    // 論理的・技術的
-    if (this.matchesPatterns(topic, [
-      '分析', 'データ', '統計', '効率', '最適化',
-      '合理的', 'システマティック', '論理',
-      // 🔧 技術キーワード追加
-      'ai', 'gpt', '人工知能', '機械学習', 'ml', 'deep learning',
-      'api', 'システム', 'ソフトウェア', 'アルゴリズム', 
-      '技術', 'テクノロジー', 'it', 'エンジニア', 'プログラミング',
-      '開発', 'コード', 'データベース', 'クラウド', 'セキュリティ'
-    ])) {
-      return 'logical';
-    }
-
-    return 'professional'; // デフォルト
   }
 
   /**
@@ -1064,49 +1108,199 @@ export class ContextIntelligenceEngine {
     }
   }
 
-  /**
-   * パターンマッチングヘルパー
-   */
+  // =================================================================
+  // 🚀 統合AI分析のための補助メソッド
+  // =================================================================
 
-  private matchesPatterns(text: string, patterns: string[]): boolean {
-    return patterns.some(pattern => 
-      text.includes(pattern) || 
-      this.fuzzyMatch(text, pattern)
-    );
+  /**
+   * 統合AI分析用のプロンプト構築
+   */
+  private buildUnifiedAnalysisPrompt(topic: string, request: any): string {
+    const autoItems = [];
+    if (!request.selectedDesigner || request.selectedDesigner === 'auto') autoItems.push('デザイナー');
+    if (!request.purpose || request.purpose === 'auto') autoItems.push('用途');  
+    if (!request.theme || request.theme === 'auto') autoItems.push('テーマ');
+
+    return `トピック: "${topic}"
+
+以下を1回で分析し、厳密なJSON形式で回答してください。
+
+分析対象項目: ${autoItems.join('、')}
+
+{
+  "contentAnalysis": {
+    "contentType": "story|business|academic|creative|technical",
+    "注意": "料理・レシピ・チャーシューなどの実用ガイドは academic として分類する",
+    "isStoryContent": true/false,
+    "confidence": 0.0-1.0の数値,
+    "reasoning": "判定理由"
+  },
+  "designerSelection": {
+    "selectedDesigner": "The Academic Visualizer|The Corporate Strategist|The Emotional Storyteller|amateur|creative",
+    "reason": "選択理由",
+    "confidence": 0.0-1.0の数値
+  },
+  "purposeSelection": {
+    "selectedPurpose": "教育・学習支援|ビジネス・営業プレゼンテーション|ストーリーテリング・物語の共有|研修・トレーニング資料|レポート・報告書|その他",
+    "reason": "選択理由", 
+    "confidence": 0.0-1.0の数値
+  },
+  "themeSelection": {
+    "selectedTheme": "academic|professional|creative|storytelling|minimalist|vibrant",
+    "reason": "選択理由",
+    "confidence": 0.0-1.0の数値
+  },
+  "additionalSettings": {
+    "suggestedSlideCount": 推奨スライド数(5-20),
+    "needsPageNumbers": true/false,
+    "imageConsistencyLevel": "low|medium|high",
+    "reasoning": "設定理由"
+  }
+}
+
+重要な判定基準:
+- 物語系（桃太郎、昔話、童話、紙芝居など）→ story + Emotional Storyteller + storytelling
+- ビジネス系（戦略、分析、ROI、研修など）→ business + Corporate Strategist + professional  
+- 学術系（研究、理論、科学分析など）→ academic + Academic Visualizer + academic
+- 料理系（チャーシュー、レシピ、料理、調理、作り方など）→ academic + amateur + academic
+- 創作系（アート、デザイン、創造など）→ creative + creative + creative  
+- 技術系（AI、プログラミング、システム、IT）→ technical + Academic Visualizer + professional
+
+⚠️重要：料理・レシピ・チャーシューは必ず academic として分類すること
+
+必ずJSON形式のみで回答し、説明文は含めないでください。`;
   }
 
   /**
-   * マッチスコア計算
+   * AI応答のJSON解析
    */
-  private calculateMatchScore(text: string, patterns: string[]): number {
-    let score = 0;
-    for (const pattern of patterns) {
-      if (text.includes(pattern)) {
-        score += 1;
-      } else if (this.fuzzyMatch(text, pattern)) {
-        score += 0.5;
+  private parseUnifiedAnalysisResponse(rawResponse: string): UnifiedAnalysisResult {
+    try {
+      // JSON部分を抽出（前後の説明文を除去）
+      const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('JSON形式が見つかりません');
       }
+      
+      const parsed = JSON.parse(jsonMatch[0]);
+      
+      // 必要な構造を検証
+      if (!parsed.contentAnalysis || !parsed.designerSelection || !parsed.purposeSelection || 
+          !parsed.themeSelection || !parsed.additionalSettings) {
+        throw new Error('必要なフィールドが不足しています');
+      }
+      
+      return parsed as UnifiedAnalysisResult;
+    } catch (error) {
+      console.error('JSON解析失敗:', error, 'Raw response:', rawResponse);
+      throw error;
     }
-    return score / patterns.length;
   }
 
   /**
-   * ファジーマッチング
+   * フォールバック時の統合分析結果作成
    */
-  private fuzzyMatch(text: string, pattern: string): boolean {
-    // シンプルな部分文字列マッチング
-    const textChars = text.split('');
-    const patternChars = pattern.split('');
-    let matches = 0;
+  private createFallbackUnifiedAnalysis(topic: string, request: any): UnifiedAnalysisResult {
+    const topicLower = topic.toLowerCase();
     
-    for (const char of patternChars) {
-      if (textChars.includes(char)) {
-        matches++;
-      }
+    // 保険処理としてのキーワードマッチング（最小限）
+    const isStoryContent = this.detectStoryContentFallback(topicLower);
+    let contentType: 'story' | 'business' | 'academic' | 'creative' | 'technical' = 'academic';
+    let designerType: DesignerType = 'The Academic Visualizer';
+    let purpose: PresentationPurpose = '教育・学習支援';
+    let theme: PresentationTheme = 'academic';
+    
+    if (isStoryContent) {
+      contentType = 'story';
+      designerType = 'The Emotional Storyteller';
+      purpose = 'ストーリーテリング・物語の共有';
+      theme = 'storytelling';
+    } else if (this.detectBusinessContentFallback(topicLower)) {
+      contentType = 'business';
+      designerType = 'The Corporate Strategist';  
+      purpose = 'ビジネス・営業プレゼンテーション';
+      theme = 'professional';
+    } else if (this.detectCreativeContentFallback(topicLower)) {
+      contentType = 'creative';
+      designerType = 'creative';
+      purpose = 'クリエイティブ・芸術表現';
+      theme = 'creative';
     }
     
-    return matches / patternChars.length > 0.6;
+    return {
+      contentAnalysis: {
+        contentType,
+        isStoryContent,
+        confidence: 0.6,
+        reasoning: 'フォールバック分析による判定'
+      },
+      designerSelection: {
+        selectedDesigner: designerType,
+        reason: 'キーワードベース推定',
+        confidence: 0.6
+      },
+      purposeSelection: {
+        selectedPurpose: purpose,
+        reason: 'コンテンツタイプベース推定',
+        confidence: 0.6
+      },
+      themeSelection: {
+        selectedTheme: theme,
+        reason: 'デザイナータイプベース推定', 
+        confidence: 0.6
+      },
+      additionalSettings: {
+        suggestedSlideCount: 10,
+        needsPageNumbers: true,
+        imageConsistencyLevel: 'medium',
+        reasoning: 'デフォルト設定'
+      }
+    };
   }
+
+  /**
+   * フォールバック用の物語コンテンツ検出（保険処理）
+   */
+  private detectStoryContentFallback(topicLower: string): boolean {
+    const storyKeywords = ['物語', '昔話', '童話', '紙芝居', '絵本', '桃太郎', 'かぐや姫'];
+    return storyKeywords.some(keyword => topicLower.includes(keyword));
+  }
+
+  /**
+   * フォールバック用のビジネスコンテンツ検出（保険処理）  
+   */
+  private detectBusinessContentFallback(topicLower: string): boolean {
+    const businessKeywords = ['戦略', '営業', 'roi', 'kpi', 'マーケティング', 'ビジネス'];
+    return businessKeywords.some(keyword => topicLower.includes(keyword));
+  }
+
+  /**
+   * フォールバック用のクリエイティブコンテンツ検出（保険処理）
+   */  
+  private detectCreativeContentFallback(topicLower: string): boolean {
+    const creativeKeywords = ['アート', 'デザイン', '創作', 'クリエイティブ', '芸術'];
+    return creativeKeywords.some(keyword => topicLower.includes(keyword));
+  }
+
+  /**
+   * AIサービス取得
+   */
+  private async getAIService() {
+    const { getAIService } = await import('./unifiedAIService');
+    return getAIService();
+  }
+
+  /**
+   * 🚨 REMOVED: パターンマッチングヘルパー削除
+   * 
+   * 以下のメソッドは削除されました：
+   * - matchesPatterns() 
+   * - calculateMatchScore()
+   * - fuzzyMatch()
+   * 
+   * 理由：全てキーワードマッチングベースのため
+   * 代替：AI分析のみを使用
+   */
 
   /**
    * 推定理由の生成

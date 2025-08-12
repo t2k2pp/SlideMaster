@@ -4,6 +4,7 @@
 // =================================================================
 
 import type { EnhancedSlideRequest } from './aiServiceInterface';
+import { contextIntelligenceResources } from '../../resources/prompts/contextIntelligenceResources';
 
 export interface MarpContentOptions {
   topic: string;
@@ -35,35 +36,23 @@ export interface MarpPresentation {
 }
 
 export class MarpContentService {
+  constructor() {
+  }
+
   /**
    * プレゼンテーションタイトルを生成
    */
   buildTitleGenerationPrompt(options: MarpContentOptions): string {
     const { topic, purpose, theme, designer, slideCount } = options;
     
-    return `以下の条件に基づいて、最適なプレゼンテーションタイトルを1つ生成してください。
-
-**条件:**
-- 内容: ${topic}
-- 用途: ${purpose}
-- テーマ: ${theme}
-- デザイナー: ${designer}
-- スライド数: ${slideCount}枚
-
-**タイトル要件（重要）:**
-- 必ず15-25文字以内で収める
-- 内容が一目で分かる簡潔な表現
-- 対象者と用途に適している
-- 覚えやすく親しみやすい
-
-**絶対条件:**
-- タイトルのみを1行で出力
-- 説明文、解説、前置きは一切不要
-- 25文字を超える場合は必ず短縮する
-
-**出力例:**
-ロジカルシンキング研修（15文字）
-データ分析入門講座（10文字）`;
+    let promptTemplate = contextIntelligenceResources.marpContentGeneration.titleGenerationPrompt;
+    
+    return promptTemplate
+      .replace(/{topic}/g, topic)
+      .replace(/{purpose}/g, purpose)
+      .replace(/{theme}/g, theme)
+      .replace(/{designer}/g, designer)
+      .replace(/{slideCount}/g, slideCount.toString());
   }
 
   /**
@@ -81,38 +70,25 @@ export class MarpContentService {
       customInstructions = ''
     } = options;
 
-    // デザイナー別のコンテンツ指向
-    const designerGuidance = this.getDesignerContentGuidance(designer);
+    // 物語・創作系の判定（統合分析結果またはフォールバック）
+    const isStoryContent = this.determineStoryContent(topic, purpose, theme, options);
     
-    // 用途別の構成指向
-    const purposeGuidance = this.getPurposeGuidance(purpose);
+    if (isStoryContent) {
+      // 物語・創作系の場合は子供向けの純粋な物語として作成
+      return this.buildStoryMarpPrompt(topic, slideCount, generatedTitle, includeImages);
+    }
 
-    return `「${topic}」について${slideCount}枚のプレゼンテーション資料を作成してください。
-タイトルは"${generatedTitle}"を使用してください。
-
-Marp形式で出力：
-
----
-title: ${generatedTitle}
-description: ${generatedTitle}について
-theme: ${theme}
----
-
-# ${generatedTitle}
-## サブタイトル
-
----
-
-# 2枚目のスライド
-内容...
-${includeImages ? '**画像説明:** [説明]' : ''}
-**ノート:** 発表者向け説明
-
-以降${slideCount}枚まで続ける。
-
-${designerGuidance}
-${purposeGuidance}
-${customInstructions ? customInstructions : ''}`;
+    const imageInstruction = includeImages ? '**画像説明:** [関連する画像の説明]' : '';
+    
+    let promptTemplate = contextIntelligenceResources.marpContentGeneration.marpPrompt;
+    
+    return promptTemplate
+      .replace(/{topic}/g, topic)
+      .replace(/{slideCount}/g, slideCount.toString())
+      .replace(/{generatedTitle}/g, generatedTitle)
+      .replace(/{theme}/g, theme)
+      .replace(/{imageInstruction}/g, imageInstruction)
+      .replace(/{customInstructions}/g, customInstructions || '');
   }
 
 
@@ -391,64 +367,159 @@ ${customInstructions ? customInstructions : ''}`;
     return 'ビジネス研修';
   }
 
-  private getDesignerContentGuidance(designer: string): string {
-    const guidance = {
-      'The Emotional Storyteller': `
-- ストーリー仕立てで感情に訴える内容
-- 具体的な事例や体験談を含める  
-- 聴衆の共感を呼ぶ表現を使用
-- ドラマチックな展開を意識`,
-      
-      'The Corporate Strategist': `
-- ビジネス価値と戦略的インパクトを強調
-- データと事実に基づく論理的構成
-- ROI や KPI などの定量的指標を活用
-- 実行可能なアクションプランを提示`,
-      
-      'The Academic Visualizer': `
-- 学術的で厳密な内容構成
-- 根拠とエビデンスを明確に提示
-- 論理的な流れと体系的な整理
-- 専門用語の適切な使用と説明`,
-      
-      'The Amateur Designer': `
-- 親しみやすく理解しやすい表現
-- 身近な例えや比喩を多用
-- カジュアルで話しかけるような文体
-- 専門用語は簡単な言葉で説明`
-    };
+
+  /**
+   * 物語・創作系コンテンツかどうかを判定（統合分析優先）
+   */
+  private determineStoryContent(topic: string, purpose: string, theme: string, options: MarpContentOptions): boolean {
+    // 統合分析結果が利用可能な場合はそちらを優先
+    if ((options as any).isStoryContent !== undefined) {
+      console.log('📚 Using unified analysis result for story detection:', (options as any).isStoryContent);
+      return (options as any).isStoryContent;
+    }
     
-    return guidance[designer as keyof typeof guidance] || guidance['The Academic Visualizer'];
+    // フォールバック: 保険処理としてのキーワードマッチング
+    console.log('⚠️ Using fallback keyword matching for story detection');
+    return this.isStoryContentFallback(topic, purpose, theme);
   }
 
-  private getPurposeGuidance(purpose: string): string {
-    const guidance = {
-      'storytelling': `
-- 起承転結の物語構成
-- キャラクターや状況設定を明確に
-- 感情の起伏を作る展開
-- 印象的な結末で締めくくり`,
-      
-      'business_presentation': `
-- エグゼクティブサマリーから開始
-- 問題→解決策→効果の流れ
-- 財務的インパクトや ROI を重視
-- 次のアクションステップを明示`,
-      
-      'educational_content': `
-- 学習目標を最初に提示
-- 段階的な知識の積み上げ構成
-- 理解度確認のポイントを含める
-- 要点のまとめで理解を定着`,
-      
-      'tutorial_guide': `
-- ステップバイステップの手順説明
-- 必要な前提知識や準備を明記
-- つまずきやすいポイントの注意書き
-- 完成イメージや期待される結果を提示`
-    };
+  /**
+   * 物語・創作系コンテンツかどうかを判定（保険処理のキーワードマッチング）
+   */
+  private isStoryContentFallback(topic: string, purpose: string, theme: string): boolean {
+    // 物語系のキーワード検出（保険処理）
+    const storyKeywords = [
+      '物語', '昔話', '童話', 'おとぎ話', '民話', '伝説', '神話',
+      '紙芝居', '絵本', '読み聞かせ',
+      '桃太郎', 'かぐや姫', 'シンデレラ', '白雪姫', 'アンデルセン'
+    ];
     
-    return guidance[purpose as keyof typeof guidance] || 
-           '聴衆のニーズに合わせた価値ある情報を論理的に構成';
+    // purpose/themeによる判定
+    const storyPurposes = ['storytelling', 'children_content', 'creative_project'];
+    const storyThemes = ['storytelling', 'children_bright', 'children_pastel', 'hand_drawn'];
+    
+    const topicLower = topic.toLowerCase();
+    const hasStoryKeyword = storyKeywords.some(keyword => topic.includes(keyword));
+    const hasStoryPurpose = storyPurposes.includes(purpose);
+    const hasStoryTheme = storyThemes.includes(theme);
+    
+    return hasStoryKeyword || hasStoryPurpose || hasStoryTheme;
+  }
+
+  /**
+   * 物語専用のMarpプロンプト構築（簡素化版）
+   */
+  private buildStoryMarpPrompt(topic: string, slideCount: number, generatedTitle: string, includeImages: boolean): string {
+    if (this.promptResources.fallback) {
+      return this.buildFallbackStoryPrompt(topic, slideCount, generatedTitle, includeImages);
+    }
+
+    const imageInstruction = includeImages ? '**画像説明:** [関連する画像の説明]' : '';
+    
+    let promptTemplate = contextIntelligenceResources.marpContentGeneration.storyMarpPrompt;
+    
+    return promptTemplate
+      .replace(/{topic}/g, topic)
+      .replace(/{slideCount}/g, slideCount.toString())
+      .replace(/{generatedTitle}/g, generatedTitle)
+      .replace(/{imageInstruction}/g, imageInstruction);
+  }
+
+  // フォールバックメソッドを追加
+  private buildFallbackTitlePrompt(options: MarpContentOptions): string {
+    const { topic, purpose, theme, designer, slideCount } = options;
+    return `以下の条件に基づいて、最適なプレゼンテーションタイトルを1つ生成してください。
+
+**条件:**
+- 内容: ${topic}
+- 用途: ${purpose}
+- テーマ: ${theme}
+- デザイナー: ${designer}
+- スライド数: ${slideCount}枚
+
+**タイトル要件（重要）:**
+- 必ず15-25文字以内で収める
+- 内容が一目で分かる簡潔な表現
+- 対象者と用途に適している
+- 覚えやすく親しみやすい
+
+**絶対条件:**
+- タイトルのみを1行で出力
+- 説明文、解説、前置きは一切不要
+- 25文字を超える場合は必ず短縮する
+
+**出力例:**
+ロジカルシンキング研修（15文字）
+データ分析入門講座（10文字）`;
+  }
+
+  private buildFallbackMarpPrompt(options: MarpContentOptions, generatedTitle: string): string {
+    const {
+      topic,
+      slideCount = 5,
+      theme = 'professional',
+      includeImages = true,
+      customInstructions = ''
+    } = options;
+    
+    const imageInstruction = includeImages ? '**画像説明:** [関連する画像の説明]' : '';
+
+    return `「${topic}」について${slideCount}枚のプレゼンテーション資料を作成してください。
+タイトルは"${generatedTitle}"を使用してください。
+
+あなたの専門知識を活用して、最も有用で正確な内容を提供してください。
+
+Marp形式で出力：
+
+---
+title: ${generatedTitle}
+description: ${generatedTitle}について
+theme: ${theme}
+---
+
+# ${generatedTitle}
+## サブタイトル
+
+---
+
+# 2枚目のスライド
+内容...
+${imageInstruction}
+**ノート:** スピーカーノート
+
+以降${slideCount}枚まで続ける。
+
+${customInstructions}`;
+  }
+
+  private buildFallbackStoryPrompt(topic: string, slideCount: number, generatedTitle: string, includeImages: boolean): string {
+    const imageInstruction = includeImages ? '**画像説明:** [関連する画像の説明]' : '';
+    
+    return `「${topic}」について${slideCount}枚のスライドを作成してください。
+タイトルは"${generatedTitle}"を使用してください。
+
+Marp形式で出力：
+
+---
+title: ${generatedTitle}
+description: ${generatedTitle}
+theme: storytelling
+---
+
+# ${generatedTitle}
+## サブタイトル
+
+${imageInstruction}
+**ノート:** スピーカーノート
+
+---
+
+# 2枚目のスライド
+内容...
+
+${imageInstruction}
+**ノート:** スピーカーノート
+
+以降${slideCount}枚まで続ける。`;
   }
 }

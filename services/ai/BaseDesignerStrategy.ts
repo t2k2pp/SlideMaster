@@ -15,6 +15,7 @@ import type {
 import { MarpContentService, type MarpContentOptions, type MarpPresentation } from './MarpContentService';
 import { MarpLayoutService, type LayoutOptions, type JSONPresentation } from './MarpLayoutService';
 import { getTextAIService } from './unifiedAIService';
+import { contextIntelligenceResources } from '../../resources/prompts/contextIntelligenceResources';
 
 /**
  * デザイナー戦略の基底抽象クラス
@@ -28,6 +29,8 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
   // Marp→JSON二段階処理サービス
   protected marpContentService = new MarpContentService();
   protected marpLayoutService = new MarpLayoutService();
+  constructor() {
+  }
 
   /**
    * コンテンツ生成用プロンプトの構築
@@ -53,6 +56,17 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
     try {
       // Phase 1: プレゼンテーションタイトル生成
       const marpOptions = MarpContentService.fromEnhancedRequest(request);
+      
+      // 統合分析結果を MarpOptions に追加
+      if (request.isStoryContent !== undefined) {
+        (marpOptions as any).isStoryContent = request.isStoryContent;
+        (marpOptions as any).contentType = request.contentType;
+        console.log('📚 Passing unified analysis to MarpContentService:', {
+          isStoryContent: request.isStoryContent,
+          contentType: request.contentType
+        });
+      }
+      
       const titlePrompt = this.marpContentService.buildTitleGenerationPrompt(marpOptions);
       
       console.log('🎯 Phase 1: Generating presentation title...');
@@ -61,8 +75,7 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
       
       const aiService = getTextAIService();
       const generatedTitle = await aiService.generateText(titlePrompt, {
-        temperature: 0.7,
-        maxTokens: 2048
+        temperature: 0.7
       });
       
       const cleanTitle = generatedTitle.trim().replace(/^["']|["']$/g, ''); // クォート除去
@@ -77,8 +90,7 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
       console.log('🎨 Marp prompt length:', marpPrompt.length);
       
       const marpResponse = await aiService.generateText(marpPrompt, {
-        temperature: 0.7,
-        maxTokens: 8192
+        temperature: 0.7
       });
       
       console.log('✅ Phase 2 completed: Marp content generated');
@@ -92,30 +104,38 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
         hasImages: marpPresentation.slides.some(s => s.imagePrompt)
       });
       
-      // Phase 2: JSONレイアウト生成
+      // Phase 2: スライド毎JSONレイアウト生成（トークン制限対策）
       const layoutOptions = MarpLayoutService.fromEnhancedRequest(request);
-      const baseLayoutPrompt = this.marpLayoutService.buildLayoutPrompt(marpPresentation, layoutOptions);
+      console.log('🎨 Phase 2: Generating JSON layout per slide...');
       
-      // 🆕 SVG/Image自動選択機能を統合
-      const layoutPrompt = this.marpLayoutService.enhanceLayoutPromptWithVisualDecisions(
-        baseLayoutPrompt,
-        marpPresentation,
-        layoutOptions
-      );
+      const generatedSlides: JSONSlide[] = [];
       
-      console.log('🎨 Phase 2: Generating JSON layout...');
-      console.log('🎨 Layout prompt length:', layoutPrompt.length);
+      for (let i = 0; i < marpPresentation.slides.length; i++) {
+        const slide = marpPresentation.slides[i];
+        console.log(`🎨 Processing slide ${i + 1}/${marpPresentation.slides.length}: ${slide.title}`);
+        
+        const slidePrompt = this.marpLayoutService.buildSingleSlideLayoutPrompt(slide, i, layoutOptions);
+        console.log('🎨 Single slide prompt length:', slidePrompt.length);
+        
+        const slideJsonResponse = await aiService.generateText(slidePrompt, {
+          temperature: 0.5
+        });
+        
+        console.log(`✅ Slide ${i + 1} JSON generated, length:`, slideJsonResponse.length);
+        
+        // 単一スライドのJSONをパース
+        const slideJson = this.marpLayoutService.parseSingleSlideResponse(slideJsonResponse, i);
+        generatedSlides.push(slideJson);
+      }
       
-      const jsonResponse = await aiService.generateText(layoutPrompt, {
-        temperature: 0.5, // レイアウトは一貫性重視
-        maxTokens: 16384
-      });
+      // 全スライドをプレゼンテーションに統合
+      const jsonPresentation = {
+        title: marpPresentation.title,
+        description: marpPresentation.title,
+        slides: generatedSlides
+      };
       
-      console.log('✅ Phase 2 completed: JSON layout generated');
-      console.log('📊 JSON response length:', jsonResponse.length);
-      
-      // JSONレスポンスを検証・パース
-      const jsonPresentation = this.marpLayoutService.parseLayoutResponse(jsonResponse);
+      console.log('✅ Phase 2 completed: All slides processed individually');
       
       // 最終的なJSONを文字列として返す
       const finalJson = JSON.stringify(jsonPresentation);
@@ -127,14 +147,35 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
     } catch (error) {
       console.error('❌ Marp→JSON generation failed:', error);
       
+      // トークン制限エラーの場合の詳細処理
+      if (error instanceof Error && (
+        error.message.includes('token limit') || 
+        error.message.includes('Unterminated string') ||
+        error.message.includes('truncated')
+      )) {
+        console.log('🔄 Detected token limit issue, trying reduced complexity...');
+        
+        // より少ないスライド数での再試行
+        const reducedRequest = {
+          ...request,
+          slideCount: Math.max(3, Math.floor(request.slideCount * 0.6)) // 60%に削減
+        };
+        
+        try {
+          console.log(`📉 Retrying with reduced slide count: ${reducedRequest.slideCount}`);
+          return await this.generateSlidesWithMarpApproach(reducedRequest);
+        } catch (retryError) {
+          console.log('❌ Reduced complexity retry also failed, falling back to traditional generation');
+        }
+      }
+      
       // フォールバック: 従来の一段階生成
       console.log('🔄 Falling back to traditional single-phase generation...');
       const fallbackPrompt = this.buildContentPrompt(request);
       const aiService = getTextAIService();
       
       return await aiService.generateText(fallbackPrompt, {
-        temperature: 0.7,
-        maxTokens: 8192
+        temperature: 0.7
       });
     }
   }
@@ -309,9 +350,16 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
     const purposeContext = this.getPurposeBasedInstructions(request.purpose);
     
     if (slideIndex === 0) {
-      return `【導入スライド】\n${title}について説明します。\n内容: ${content.substring(0, 100)}...\n発表時間: 1-2分\n注意点: 聴衆の注意を引くよう、はっきりと話してください。`;
+      let template = contextIntelligenceResources.designerStrategies.baseStrategy.speakerNotesIntro;
+      return template
+        .replace(/{title}/g, title)
+        .replace(/{content}/g, content.substring(0, 100) + '...');
     } else {
-      return `【${title}】\n要点: ${content.substring(0, 150)}...\n発表のポイント: この内容を${purposeContext}説明してください。\n推奨発表時間: 1-2分`;
+      let template = contextIntelligenceResources.designerStrategies.baseStrategy.speakerNotesContent;
+      return template
+        .replace(/{title}/g, title)
+        .replace(/{content}/g, content.substring(0, 150) + '...')
+        .replace(/{purposeContext}/g, purposeContext);
     }
   }
 
@@ -409,18 +457,12 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
    */
   protected buildTitleSlideNotes(request: EnhancedSlideRequest): string {
     const purposeContext = this.getPurposeBasedInstructions(request.purpose);
+    const mainTitle = this.extractMainTitle(request.topic);
     
-    return `【タイトルスライド】
-${this.extractMainTitle(request.topic)}についてのプレゼンテーションを開始します。
-
-発表の準備:
-• 聴衆への挨拶と自己紹介
-• プレゼンテーションの目的を明確に伝える
-• 全体の構成や所要時間を予告
-
-発表スタイル: ${purposeContext}
-推奨時間: 1-2分
-注意点: 第一印象が重要なので、明確で自信を持って話してください。`;
+    let template = contextIntelligenceResources.designerStrategies.baseStrategy.titleSlideNotes;
+    return template
+      .replace(/{mainTitle}/g, mainTitle)
+      .replace(/{purposeContext}/g, purposeContext);
   }
 
   // =================================================================
@@ -548,7 +590,10 @@ ${this.extractMainTitle(request.topic)}についてのプレゼンテーショ�
       styleInstruction = styleMap[request.imageSettings.style] || '';
     }
 
-    return `${frequencyText}${styleInstruction}関連画像を含めて`;
+    let template = contextIntelligenceResources.designerStrategies.baseStrategy.imageInstructions;
+    return template
+      .replace(/{frequencyText}/g, frequencyText)
+      .replace(/{styleInstruction}/g, styleInstruction);
   }
 
   /**
@@ -714,5 +759,28 @@ ${this.extractMainTitle(request.topic)}についてのプレゼンテーショ�
 - "src": ""として空文字列にしてください
 - プレースホルダーとして[画像：◯◯]のようなテキストを"content"または"alt"に記載してください
 - icons8.com、unsplash.com、pixabay.com等の具体的なURLは使用禁止です`;
+  }
+
+  // フォールバック関数
+  private buildFallbackNotes(title: string, content: string, slideIndex: number, purposeContext: string): string {
+    if (slideIndex === 0) {
+      return `【導入スライド】\n${title}について説明します。\n内容: ${content.substring(0, 100)}...\n発表時間: 1-2分\n注意点: 聴衆の注意を引くよう、はっきりと話してください。`;
+    } else {
+      return `【${title}】\n要点: ${content.substring(0, 150)}...\n発表のポイント: この内容を${purposeContext}説明してください。\n推奨発表時間: 1-2分`;
+    }
+  }
+
+  private buildFallbackTitleNotes(mainTitle: string, purposeContext: string): string {
+    return `【タイトルスライド】
+${mainTitle}についてのプレゼンテーションを開始します。
+
+発表の準備:
+• 聴衆への挨拶と自己紹介
+• プレゼンテーションの目的を明確に伝える
+• 全体の構成や所要時間を予告
+
+発表スタイル: ${purposeContext}
+推奨時間: 1-2分
+注意点: 第一印象が重要なので、明確で自信を持って話してください。`;
   }
 }

@@ -4,6 +4,7 @@
 
 import { getAIService } from './unifiedAIService';
 import { SVGLayer } from '../../types';
+import { contextIntelligenceResources } from '../../resources/prompts/contextIntelligenceResources';
 
 export interface SVGGenerationRequest {
   prompt: string;
@@ -20,6 +21,7 @@ export interface SVGGenerationResult {
   estimatedSize: { width: number; height: number };
   generationPrompt: string;
 }
+
 
 /**
  * SVGに適したコンテンツかどうかを判定
@@ -69,35 +71,19 @@ export async function generateSVG(request: SVGGenerationRequest): Promise<SVGGen
   
   const { prompt, width = 100, height = 100, style = 'simple', colorScheme = 'themed', complexity = 'medium' } = request;
 
-  const systemPrompt = `あなたは高品質なSVGコンテンツを生成する専門家です。
+  let systemPrompt: string;
+  let userPrompt: string;
 
-以下の指針でSVGを作成してください：
-
-**技術要件**:
-- 完全で有効なSVGタグで囲む
-- viewBox属性を適切に設定
-- レスポンシブ対応（percentage, viewBoxベース）
-- クリーンで最適化されたコード
-
-**デザイン要件**:
-- スタイル: ${style}
-- 色彩: ${colorScheme}
-- 複雑さ: ${complexity}
-- 想定サイズ: ${width}x${height}
-
-**出力形式**:
-SVGタグのみを出力し、説明文は含めないでください。
-
-例:
-<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="50" cy="50" r="40" fill="#3b82f6"/>
-</svg>`;
-
-  const userPrompt = `以下の要求に基づいてSVGを作成してください：
-
-${prompt}
-
-要求されたSVG:`;
+  let systemTemplate = contextIntelligenceResources.svgGeneration.systemPrompt;
+  systemPrompt = systemTemplate
+    .replace(/{width}/g, width.toString())
+    .replace(/{height}/g, height.toString())
+    .replace(/{style}/g, style)
+    .replace(/{colorScheme}/g, colorScheme)
+    .replace(/{complexity}/g, complexity);
+  
+  let userTemplate = contextIntelligenceResources.svgGeneration.userPrompt;
+  userPrompt = userTemplate.replace(/{prompt}/g, prompt);
 
   try {
     const result = await aiService.generateText(`${systemPrompt}\n\n${userPrompt}`);
@@ -235,4 +221,39 @@ export function validateSVGContent(svgContent: string): { isValid: boolean; sani
     sanitized: svgContent,
     errors: errors.length > 0 ? errors : undefined
   };
+}
+
+// フォールバック関数
+function buildFallbackSVGSystemPrompt(width: number, height: number, style: string, colorScheme: string, complexity: string): string {
+  return `あなたは高品質なSVGコンテンツを生成する専門家です。
+
+以下の指針でSVGを作成してください：
+
+**技術要件**:
+- 完全で有効なSVGタグで囲む
+- viewBox属性を適切に設定
+- レスポンシブ対応（percentage, viewBoxベース）
+- クリーンで最適化されたコード
+
+**デザイン要件**:
+- スタイル: ${style}
+- 色彩: ${colorScheme}
+- 複雑さ: ${complexity}
+- 想定サイズ: ${width}x${height}
+
+**出力形式**:
+SVGタグのみを出力し、説明文は含めないでください。
+
+例:
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="50" cy="50" r="40" fill="#3b82f6"/>
+</svg>`;
+}
+
+function buildFallbackSVGUserPrompt(prompt: string): string {
+  return `以下の要求に基づいてSVGを作成してください：
+
+${prompt}
+
+要求されたSVG:`;
 }

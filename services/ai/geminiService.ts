@@ -4,6 +4,7 @@
 // =================================================================
 
 import { getUserSettings } from '../storageService';
+import { contextIntelligenceResources } from '../../resources/prompts/contextIntelligenceResources';
 
 export interface GeminiConfig {
   // タスク別APIキー対応
@@ -46,7 +47,6 @@ export interface GeminiVideoRequest {
 
 export class GeminiService {
   private config: GeminiConfig;
-
   constructor(config: GeminiConfig) {
     this.config = {
       baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
@@ -60,6 +60,7 @@ export class GeminiService {
       ...config,
     };
   }
+
 
   // =================================================================
   // テキスト生成
@@ -189,19 +190,19 @@ export class GeminiService {
   }
 
   private async generateImageWithImagen(request: GeminiImageRequest, modelName: string): Promise<string> {
-    // Imagen APIは現在Gemini APIと統合され、generateContentエンドポイントを使用
-    const url = `${this.config.baseUrl}/models/${modelName}:generateContent`;
+    // Vertex AI経由でのImagen APIアクセス（predictエンドポイント使用）
+    const url = `${this.config.baseUrl}/models/${modelName}:predict`;
     
-    console.log('🎨 Using Imagen API endpoint:', url);
+    console.log('🎨 Using Vertex AI Imagen endpoint:', url);
     
+    // Vertex AI Predict API仕様に準拠したリクエストボディ
     const requestBody = {
-      contents: [{
-        parts: [{
-          text: `Generate an image: ${request.prompt}. Style: high quality, detailed, professional.`
-        }]
+      instances: [{
+        prompt: `Generate an image: ${request.prompt}. Style: high quality, detailed, professional.`
       }],
-      generationConfig: {
+      parameters: {
         temperature: 0.7,
+        sampleCount: 1
       }
     };
 
@@ -218,28 +219,45 @@ export class GeminiService {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('❌ Imagen API Error Response:', errorData);
-      throw new Error(`Imagen API Error: ${response.status} - ${errorData.error?.message || response.statusText}`);
+      console.error('❌ Vertex AI Predict API Error Response:', errorData);
+      throw new Error(`Vertex AI Predict API Error: ${response.status} - ${errorData.error?.message || response.statusText}`);
     }
 
     const data = await response.json();
-    console.log('✅ Imagen API Response:', JSON.stringify(data, null, 2));
+    console.log('✅ Vertex AI Predict API Response:', JSON.stringify(data, null, 2));
     
-    // Imagen API統合後の応答形式を処理
+    // Vertex AI Predict APIの標準レスポンス形式
+    if (data.predictions && Array.isArray(data.predictions) && data.predictions.length > 0) {
+      const prediction = data.predictions[0];
+      
+      // 複数の可能なレスポンス形式をサポート
+      if (prediction.bytesBase64Encoded) {
+        console.log('✅ Using Vertex AI base64 format');
+        return `data:image/jpeg;base64,${prediction.bytesBase64Encoded}`;
+      }
+      
+      if (prediction.mimeType && prediction.data) {
+        console.log('✅ Using Vertex AI structured format');
+        return `data:${prediction.mimeType};base64,${prediction.data}`;
+      }
+      
+      // 生の画像データの場合
+      if (typeof prediction === 'string') {
+        console.log('✅ Using Vertex AI raw base64 format');
+        return `data:image/jpeg;base64,${prediction}`;
+      }
+    }
+    
+    // 後方互換性：Gemini generateContent形式もサポート
     if (data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data) {
       const mimeType = data.candidates[0].content.parts[0].inlineData.mimeType || 'image/jpeg';
       const imageData = data.candidates[0].content.parts[0].inlineData.data;
-      console.log('✅ Successfully extracted image data');
+      console.log('✅ Using Gemini generateContent format (fallback)');
       return `data:${mimeType};base64,${imageData}`;
     }
     
-    // 旧形式の応答もサポート（後方互換性）
-    if (data.predictions?.[0]?.bytesBase64Encoded) {
-      console.log('✅ Using legacy Imagen format');
-      return `data:image/jpeg;base64,${data.predictions[0].bytesBase64Encoded}`;
-    }
-    
-    throw new Error('Invalid response format from Imagen API - no image data found');
+    console.error('❌ Unexpected response format:', data);
+    throw new Error('Invalid response format from Vertex AI Predict API - no image data found');
   }
 
   private async generateImageWithGeminiFlash(request: GeminiImageRequest, modelName: string): Promise<string> {
@@ -298,7 +316,24 @@ export class GeminiService {
   // =================================================================
 
   async generateSlideContent(topic: string, slideCount?: number): Promise<string> {
-    const prompt = `以下のトピックについて、${slideCount || 5}枚のプレゼンテーションスライドを作成してください。
+    let prompt: string;
+    let systemPrompt: string;
+
+    let promptTemplate = contextIntelligenceResources.geminiService.slideContentPrompt;
+    prompt = promptTemplate
+      .replace(/{topic}/g, topic)
+      .replace(/{slideCount}/g, (slideCount || 5).toString());
+    systemPrompt = contextIntelligenceResources.geminiService.systemPrompt;
+
+    return this.generateText({
+      prompt,
+      systemPrompt,
+      temperature: 0.7,
+    });
+  }
+
+  private buildFallbackSlidePrompt(topic: string, slideCount: number): string {
+    return `以下のトピックについて、${slideCount}枚のプレゼンテーションスライドを作成してください。
 
 トピック: ${topic}
 
@@ -330,13 +365,6 @@ export class GeminiService {
 }
 
 各スライドは情報が豊富で、視覚的に魅力的になるように作成してください。`;
-
-    return this.generateText({
-      prompt,
-      systemPrompt: 'あなたは優秀なプレゼンテーションデザイナーです。与えられたトピックについて、構造化された分かりやすいスライドを作成してください。',
-      temperature: 0.7,
-      maxTokens: 8192
-    });
   }
 
   // =================================================================
@@ -410,7 +438,6 @@ export class GeminiService {
     try {
       const testResponse = await this.generateText({
         prompt: 'Hello, this is a connection test.',
-        maxTokens: 10
       });
       return testResponse.length > 0;
     } catch (error) {

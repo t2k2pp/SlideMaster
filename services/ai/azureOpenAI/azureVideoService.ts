@@ -72,7 +72,6 @@ Focus on extracting actionable insights that can be used to create effective pre
     const result = await this.analyzeVideo({
       ...options,
       prompt: analysisPrompt,
-      maxTokens: 2048,
       temperature: 0.3
     });
 
@@ -98,7 +97,6 @@ Format the response as a numbered list of key moments.`;
     const result = await this.analyzeVideo({
       ...options,
       prompt,
-      maxTokens: 1536,
       temperature: 0.4
     });
 
@@ -125,7 +123,6 @@ The slides should be:
     return this.analyzeVideo({
       ...options,
       prompt,
-      maxTokens: 3072,
       temperature: 0.6
     });
   }
@@ -157,7 +154,6 @@ Be constructive and specific in your feedback.`;
     const result = await this.analyzeVideo({
       ...options,
       prompt,
-      maxTokens: 1536,
       temperature: 0.4
     });
 
@@ -196,7 +192,6 @@ If no audio is present, focus on describing the visual content and any text visi
     const result = await this.analyzeVideo({
       ...options,
       prompt,
-      maxTokens: 2048,
       temperature: 0.3
     });
 

@@ -6,6 +6,7 @@
 
 import { BaseDesignerStrategy } from './BaseDesignerStrategy';
 import { EnhancedSlideRequest } from './aiServiceInterface';
+import { contextIntelligenceResources } from '../../resources/prompts/contextIntelligenceResources';
 
 export class AcademicVisualizerStrategy extends BaseDesignerStrategy {
   readonly designerId = 'The Academic Visualizer' as const;
@@ -19,54 +20,42 @@ export class AcademicVisualizerStrategy extends BaseDesignerStrategy {
       request.slideCountMode
     );
     const imageInstructions = this.getImageInstructions(request);
+    const jsonStructureInstructions = this.getJsonStructureInstructions(request);
 
+    let template = contextIntelligenceResources.designerStrategies.academicVisualizer.contentPrompt;
+    return template
+      .replace(/{topic}/g, request.topic)
+      .replace(/{purposeInstructions}/g, purposeInstructions)
+      .replace(/{themeInstructions}/g, themeInstructions)
+      .replace(/{slideCountInstructions}/g, slideCountInstructions)
+      .replace(/{imageInstructions}/g, imageInstructions)
+      .replace(/{jsonStructureInstructions}/g, jsonStructureInstructions);
+  }
+
+  private buildFallbackContentPrompt(
+    request: EnhancedSlideRequest, 
+    purposeInstructions: string, 
+    themeInstructions: string, 
+    slideCountInstructions: string, 
+    imageInstructions: string,
+    jsonStructureInstructions: string
+  ): string {
     return `
 トピック: ${request.topic}
 
-【デザイナー: The Academic Visualizer】
-哲学: "Clarity and Accuracy Above All" - 明確性と正確性が何よりも重要
+【The Academic Visualizer - レイアウト専門】
+あなたの専門知識を最大限活用し、「${request.topic}」について最も有用で正確な内容を提供してください。
 
-デザイン原則:
-- 情報の構造化: 論理的階層による明確な情報組織
-- 均等配置: バランスの取れた視覚的配置
-- 伝統的フォント: 可読性と権威性を重視
-- 客観的表現: 感情的でない、事実に基づく記述
+レイアウト指針:
+- 体系的で構造化された情報配置
+- 論理的階層による明確な情報組織  
+- バランスの取れた視覚的配置
+- 情報密度高めの詳細表示
 
-学術的アプローチ:
-1. 明確な論点の設定
-2. 根拠に基づく論証
-3. 系統的な情報整理
-4. 客観的な結論導出
-5. 参照可能な情報源の重視
-
-コンテンツ作成指示:
 ${purposeInstructions}、${themeInstructions}${slideCountInstructions}。
-
-具体的な要求:
-1. 各スライドに明確な論点を1つ設定
-2. 情報の階層を数値化・記号化して明確化
-3. 専門用語は適切に使用し、必要に応じて定義を併記
-4. 客観的で検証可能な表現を優先
-5. データや事実に基づく論証を重視
-6. 引用や出典の形式を意識した構成
 ${imageInstructions}
 
-レイアウト要求:
-- 情報の重要度に応じた階層的配置
-- 図表や画像は説明的・補完的な役割
-- テキストの均等配置を重視
-- 色彩は控えめで学術的（紺、グレー、白を基調）
-- フォントサイズは情報の重要度を明確に反映
-
-学術的表現の指示:
-- 「〜について検討する」「〜を分析する」
-- 「データによると」「研究結果では」
-- 「以下に示すように」「図表○○に見られるように」
-- 「結論として」「要約すると」
-
-${this.getJsonStructureInstructions(request)}
-
-注意: 感情的表現を避け、事実と論理に基づく客観的で信頼性の高いプレゼンテーションを作成すること。`;
+${jsonStructureInstructions}`;
   }
 
   buildImagePrompt(slideContent: string, imageContext: any): string {
@@ -106,8 +95,7 @@ Professional typography, clear labeling if needed.`;
     // 学術的構造の強化
     processed = this.enforceAcademicStructure(processed);
     
-    // 専門用語の適正化
-    processed = this.enhanceAcademicLanguage(processed);
+    // レイアウト専門のため、内容変更は削除
     
     // 学術的色彩の適用
     processed = this.applyAcademicColors(processed);
@@ -192,29 +180,6 @@ Professional typography, clear labeling if needed.`;
     }
   }
 
-  private enhanceAcademicLanguage(content: string): string {
-    try {
-      const parsed = JSON.parse(content);
-      
-      if (parsed.slides) {
-        parsed.slides = parsed.slides.map((slide: any) => {
-          if (slide.layers) {
-            slide.layers = slide.layers.map((layer: any) => {
-              if (layer.type === 'text' && layer.content) {
-                layer.content = this.convertToAcademicLanguage(layer.content);
-              }
-              return layer;
-            });
-          }
-          return slide;
-        });
-      }
-      
-      return JSON.stringify(parsed, null, 2);
-    } catch {
-      return content;
-    }
-  }
 
   private applyAcademicColors(content: string): string {
     try {
@@ -327,31 +292,81 @@ Professional typography, clear labeling if needed.`;
     return sizes[Math.min(layerIndex, sizes.length - 1)];
   }
 
-  private convertToAcademicLanguage(text: string): string {
-    // 学術的表現への変換辞書
-    const conversions = [
-      { from: /です$/, to: 'である' },
-      { from: /ます$/, to: 'する' },
-      { from: /わかります/, to: '明らかである' },
-      { from: /大切/, to: '重要' },
-      { from: /いいこと/, to: '有効性' },
-      { from: /問題/, to: '課題' },
-      { from: /答え/, to: '解答' }
-    ];
-    
-    let academic = text;
-    
-    // 1-2個の変換のみ適用（過度な変換を避ける）
-    const randomConversions = conversions.slice(0, 2);
-    randomConversions.forEach(conversion => {
-      academic = academic.replace(conversion.from, conversion.to);
-    });
-    
-    return academic;
-  }
 
   private getHierarchyMarker(layerIndex: number): string {
     const markers = ['•', '◦', '▪', '‣'];
     return markers[Math.min(layerIndex - 1, markers.length - 1)];
+  }
+
+  /**
+   * 物語・創作系コンテンツかどうかを判定（統合分析結果優先）
+   */
+  private determineStoryContentFromRequest(parsed: any, content: string): boolean {
+    // リクエスト情報から統合分析結果を取得
+    const isStoryFromAnalysis = this.getStoryContentFromContext(content);
+    if (isStoryFromAnalysis !== null) {
+      console.log('📚 Using unified analysis result for story detection in Academic Visualizer:', isStoryFromAnalysis);
+      return isStoryFromAnalysis;
+    }
+    
+    // フォールバック: 保険処理としてのキーワードマッチング
+    console.log('⚠️ Using fallback keyword matching for story detection in Academic Visualizer');
+    return this.isStoryContentFallback(parsed);
+  }
+
+  /**
+   * コンテキストから統合分析の物語判定結果を取得
+   */
+  private getStoryContentFromContext(content: string): boolean | null {
+    try {
+      // リクエスト履歴やコンテキストから統合分析結果を取得する試行
+      // TODO: より確実な方法で統合分析結果を取得
+      return null; // 現時点では利用不可
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 物語・創作系コンテンツかどうかを判定（保険処理のキーワードマッチング）
+   */
+  private isStoryContentFallback(parsed: any): boolean {
+    if (!parsed || !parsed.title) return false;
+    
+    const title = parsed.title.toLowerCase();
+    const description = (parsed.description || '').toLowerCase();
+    
+    // 物語系キーワード検出（保険処理）
+    const storyKeywords = [
+      '物語', '昔話', '童話', 'おとぎ話', '民話', '伝説', '神話',
+      '紙芝居', '絵本', '読み聞かせ', 'story', 'tale', 'fairy',
+      '桃太郎', 'かぐや姫', 'シンデレラ', '白雪姫'
+    ];
+    
+    // スライド内容からも判定
+    let hasStoryContent = false;
+    if (parsed.slides && parsed.slides.length > 0) {
+      const firstSlideContent = this.extractSlideText(parsed.slides[0]);
+      hasStoryContent = firstSlideContent.includes('むかしむかし') || 
+                       firstSlideContent.includes('〜心温まる物語〜') ||
+                       firstSlideContent.includes('ある日') ||
+                       firstSlideContent.includes('昔々');
+    }
+    
+    return storyKeywords.some(keyword => 
+      title.includes(keyword) || description.includes(keyword)
+    ) || hasStoryContent;
+  }
+
+  /**
+   * スライドからテキスト内容を抽出
+   */
+  private extractSlideText(slide: any): string {
+    if (!slide.layers) return '';
+    
+    return slide.layers
+      .filter((layer: any) => layer.type === 'text' && layer.content)
+      .map((layer: any) => layer.content)
+      .join(' ');
   }
 }
