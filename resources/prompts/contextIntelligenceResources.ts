@@ -1,76 +1,43 @@
 // =================================================================
-// Context Intelligence Engine - TypeScript Prompt Resources
+// Context Intelligence Engine - Simplified Style-Based System
 // 
-// 目的: AIによる完全分析でキーワードマッチング排除
-// 原則: 
-//   - 生成AIの理解能力を最大活用
-//   - ルールベース判定を完全排除  
-//   - コンテクストベース判定に切り替え
+// 目的: 4つのシンプルなスタイルベースでプレゼンテーション生成を最適化
+// スタイル: 
+//   - simple: シンプルで洗練されたデザイン
+//   - education: 教育向け、大きな文字とイラスト重視
+//   - marketing-oriented: 製品・サービスを魅力的に見せるビジュアル重視
+//   - research presentation-oriented: 論理的構成とインフォグラフィック
 // =================================================================
 
-export interface ContentTypeAnalysis {
+export interface StyleAnalysis {
   systemPrompt: string;
-  categories: {
-    [key: string]: {
-      description: string;
-      examples: string[];
-      specialRules?: string[];
-    };
-  };
-  classificationHints: {
-    [key: string]: string;
-  };
-  responseFormat: string;
-}
-
-export interface DesignerSelection {
-  systemPrompt: string;
-  designers: {
+  styles: {
     [key: string]: {
       name: string;
       description: string;
-      suitableFor: string[];
+      characteristics: string[];
+      imageStyle: string;
+      layoutPriority: string;
     };
   };
   responseFormat: string;
 }
 
-export interface UnifiedAnalysis {
+export interface SimplifiedAnalysis {
   systemPrompt: string;
   analysisStructure: {
-    contentAnalysis: {
-      contentType: string;
-      note: string;
-      isStoryContent: string;
-      confidence: string;
-      reasoning: string;
-    };
-    designerSelection: {
-      selectedDesigner: string;
+    styleSelection: {
+      selectedStyle: string;
       reason: string;
       confidence: string;
     };
-    purposeSelection: {
-      selectedPurpose: string;
-      reason: string;
-      confidence: string;
-    };
-    themeSelection: {
-      selectedTheme: string;
-      reason: string;
-      confidence: string;
-    };
-    additionalSettings: {
+    presentationSettings: {
       suggestedSlideCount: string;
       needsPageNumbers: string;
       imageConsistencyLevel: string;
       reasoning: string;
     };
   };
-  judgmentCriteria: {
-    [key: string]: string;
-  };
-  criticalRule: string;
   responseFormat: string;
 }
 
@@ -89,16 +56,32 @@ export interface TopicProcessing {
   structuringPrompt: string;
 }
 
-export interface DesignerStrategies {
-  academicVisualizer: {
+export interface StyleStrategies {
+  simple: {
     contentPrompt: string;
+    imagePrompt: string;
+    layoutGuidance: string;
+  };
+  education: {
+    contentPrompt: string;
+    imagePrompt: string;
+    layoutGuidance: string;
+  };
+  marketingOriented: {
+    contentPrompt: string;
+    imagePrompt: string;
+    layoutGuidance: string;
+  };
+  researchPresentationOriented: {
+    contentPrompt: string;
+    imagePrompt: string;
+    layoutGuidance: string;
   };
   baseStrategy: {
     speakerNotesIntro: string;
     speakerNotesContent: string;
     titleSlideNotes: string;
     jsonStructureInstructions: string;
-    imageInstructions: string;
   };
 }
 
@@ -128,13 +111,12 @@ export interface AzureTextService {
 }
 
 export interface ContextIntelligenceResources {
-  contentTypeAnalysis: ContentTypeAnalysis;
-  designerSelection: DesignerSelection;
-  unifiedAnalysis: UnifiedAnalysis;
+  styleAnalysis: StyleAnalysis;
+  simplifiedAnalysis: SimplifiedAnalysis;
   marpLayoutGeneration: MarpLayoutGeneration;
   marpContentGeneration: MarpContentGeneration;
   topicProcessing: TopicProcessing;
-  designerStrategies: DesignerStrategies;
+  styleStrategies: StyleStrategies;
   geminiService: GeminiService;
   unifiedAIService: UnifiedAIService;
   svgGeneration: SVGGeneration;
@@ -146,161 +128,93 @@ export interface ContextIntelligenceResources {
 // =================================================================
 
 export const contextIntelligenceResources: ContextIntelligenceResources = {
-  // コンテンツタイプ分析プロンプト
-  contentTypeAnalysis: {
-    systemPrompt: `あなたは優秀なコンテンツ分類エキスパートです。
-以下のリクエストを分析し、最適なカテゴリを判定してください。`,
+  // スタイル分析プロンプト
+  styleAnalysis: {
+    systemPrompt: `あなたはプレゼンテーションスタイル選択のエキスパートです。
+以下のトピックを分析し、最適なプレゼンテーションスタイルを4つの選択肢から選択してください。`,
 
-    categories: {
-      story: {
-        description: "物語・ストーリー・童話・民話",
-        examples: [
-          "桃太郎の話を作成して",
-          "感動する体験談を書いて",
-          "冒険物語を作って"
-        ]
-      },
-      technical: {
-        description: "技術・IT・AI・エンジニアリング関連の説明・調査",
-        examples: [
-          "GPT-5について調べて",
-          "プログラミングの仕組みを説明",
-          "AIの技術解説"
-        ]
-      },
-      business: {
-        description: "ビジネス・経営・研修・マーケティング・企業関連",
-        examples: [
-          "営業戦略の提案",
-          "クリティカルシンキング研修資料",
-          "売上分析レポート",
-          "リーダーシップ研修"
-        ]
-      },
-      academic: {
-        description: "学術・研究・教育・実用的指導・料理レシピ",
-        examples: [
-          "環境問題の調査",
-          "歴史の解説",
-          "プランクのやり方",
-          "料理の作り方",
-          "チャーシューレシピ",
-          "使い方ガイド"
+    styles: {
+      simple: {
+        name: "simple",
+        description: "シンプルで洗練されたデザイン、グラフや表を使いやすいレイアウト、論理的な構成をサポート",
+        characteristics: [
+          "スタイリッシュでクリーンなデザイン",
+          "データ可視化に適したレイアウト", 
+          "論理的な情報構成",
+          "アジェンダ、結論、次のステップなどの構造化されたページ",
+          "ビジネス・学術・技術系に適する"
         ],
-        specialRules: [
-          "「やり方」「方法」「手順」「料理」「レシピ」の実用解説は全てacademic（実践教育）"
-        ]
+        imageStyle: "プロフェッショナル、クリーンなビジュアル、図表・グラフ・チャート重視",
+        layoutPriority: "構造性と可読性を重視、シンプルな配色"
       },
-      creative: {
-        description: "芸術・デザイン・創作活動・表現",
-        examples: [
-          "アート作品の紹介",
-          "デザインコンセプト",
-          "創作活動の発表"
-        ]
+      education: {
+        name: "education",
+        description: "文字サイズを大きくし、イラストやアイコンを多めに配置する教育・学習向けスタイル",
+        characteristics: [
+          "大きく読みやすい文字サイズ",
+          "イラストやアイコンを多用",
+          "図解やステップ形式のレイアウト",
+          "専門的なグラフより分かりやすいビジュアル",
+          "子供向けコンテンツでは親しみやすい画像も許可"
+        ],
+        imageStyle: "分かりやすいイラスト重視、図解・ステップ説明、子供向けなら「childish imagery OK」",
+        layoutPriority: "視認性と理解しやすさを重視"
+      },
+      marketingOriented: {
+        name: "marketing-oriented", 
+        description: "製品やサービスを魅力的に見せるための写真や動画を配置しやすいビジュアル重視スタイル",
+        characteristics: [
+          "ビジュアルインパクトを重視",
+          "製品・サービス写真を中心としたレイアウト",
+          "魅力的なデザインとカラースキーム",
+          "商品写真風のプレースホルダー画像",
+          "最終的には実際の製品写真に差し替え前提"
+        ],
+        imageStyle: "商品写真風、魅力的な製品ビジュアル、マーケティング素材として使用可能",
+        layoutPriority: "視覚的インパクトと魅力を重視"
+      },
+      researchPresentationOriented: {
+        name: "research-presentation-oriented",
+        description: "図表や数式をきれいに配置できる研究発表向けスタイル",
+        characteristics: [
+          "論理的な研究発表構成（イントロ→方法→結果→考察→結論）",
+          "図表や数式の美しい配置", 
+          "PDCAサイクル、SWOT図などのビジネスフレームワーク対応",
+          "インフォグラフィックス的な情報表示",
+          "論理的思考を補助するビジュアル"
+        ],
+        imageStyle: "インフォグラフィック、論理補助図表、PDCA・SWOT等フレームワーク図",
+        layoutPriority: "論理性と構造化された情報表示を重視"
       }
     },
 
-    classificationHints: {
-      business: "クリティカルシンキング、リーダーシップ、人材育成、プレゼンテーション",
-      technical: "GPT、AI、プログラミング、システム、API",
-      story: "桃太郎、童話、ストーリー、体験談",
-      academic: "環境、歴史、科学、理論",
-      cooking: "チャーシュー、レシピ、調理、食材、作り方、料理法 → academic（料理教育として）"
-    },
-
-    responseFormat: `回答形式: カテゴリ名のみを英語で回答（story, technical, business, academic, creative のいずれか）`
+    responseFormat: `**Minified JSON形式（スペース・改行・インデントなし）**で回答してください。トークン数節約のため、整形は不要です。
+{
+  "selectedStyle": "simple|education|marketing-oriented|research-presentation-oriented",
+  "reason": "選択理由の説明",
+  "confidence": "0.0-1.0の数値"
+}`
   },
 
-  // デザイナー選択プロンプト
-  designerSelection: {
-    systemPrompt: `コンテンツタイプ"{contentType}"の以下のトピックに最適なデザイナーを選択してください。`,
-
-    designers: {
-      emotionalStoryteller: {
-        name: "The Emotional Storyteller",
-        description: "物語・感動系",
-        suitableFor: ["story", "emotional_content"]
-      },
-      corporateStrategist: {
-        name: "The Corporate Strategist",
-        description: "ビジネス・企業系",
-        suitableFor: ["business", "corporate_content"]
-      },
-      logical: {
-        name: "logical",
-        description: "技術・論理的・AI系",
-        suitableFor: ["technical", "engineering_content"]
-      },
-      academicVisualizer: {
-        name: "The Academic Visualizer",
-        description: "学術・教育系（理論・研究）",
-        suitableFor: ["academic", "research_content"]
-      },
-      amateur: {
-        name: "amateur",
-        description: "実用指導・料理・家庭的な内容",
-        suitableFor: ["academic", "practical_content", "cooking", "tutorial"]
-      },
-      creative: {
-        name: "creative",
-        description: "芸術・創作系",
-        suitableFor: ["creative", "artistic_content"]
-      }
-    },
-
-    responseFormat: `回答形式: デザイナー名のみを英語で回答（例: logical）`
-  },
-
-  // 統合分析プロンプト
-  unifiedAnalysis: {
+  // 簡素化された分析プロンプト
+  simplifiedAnalysis: {
     systemPrompt: `トピック: "{topic}"
     
-以下を1回で分析し、**Minified JSON形式（スペース・改行・インデントなし）**で回答してください。トークン数節約のため、整形は不要です。
-
-分析対象項目: {autoItems}`,
+以下を1回で分析し、**Minified JSON形式（スペース・改行・インデントなし）**で回答してください。トークン数節約のため、整形は不要です。`,
 
     analysisStructure: {
-      contentAnalysis: {
-        contentType: "story|business|academic|creative|technical",
-        note: "料理・レシピ・チャーシューなどの実用ガイドはacademicとして分類する",
-        isStoryContent: "true/false",
-        confidence: "0.0-1.0の数値",
-        reasoning: "判定理由"
-      },
-      designerSelection: {
-        selectedDesigner: "The Academic Visualizer|The Corporate Strategist|The Emotional Storyteller|amateur|creative",
+      styleSelection: {
+        selectedStyle: "simple|education|marketing-oriented|research-presentation-oriented",
         reason: "選択理由",
         confidence: "0.0-1.0の数値"
       },
-      purposeSelection: {
-        selectedPurpose: "教育・学習支援|ビジネス・営業プレゼンテーション|ストーリーテリング・物語の共有|研修・トレーニング資料|レポート・報告書|その他",
-        reason: "選択理由",
-        confidence: "0.0-1.0の数値"
-      },
-      themeSelection: {
-        selectedTheme: "academic|professional|creative|storytelling|minimalist|vibrant",
-        reason: "選択理由",
-        confidence: "0.0-1.0の数値"
-      },
-      additionalSettings: {
+      presentationSettings: {
         suggestedSlideCount: "推奨スライド数(5-20)",
         needsPageNumbers: "true/false",
         imageConsistencyLevel: "low|medium|high",
         reasoning: "設定理由"
       }
     },
-
-    judgmentCriteria: {
-      story: "物語系（桃太郎、昔話、童話、紙芝居など）→ story + Emotional Storyteller + storytelling",
-      business: "ビジネス系（戦略、分析、ROI、研修など）→ business + Corporate Strategist + professional",
-      academic: "学術系（研究、理論、科学分析など）→ academic + Academic Visualizer + academic",
-      cooking: "料理系（チャーシュー、レシピ、料理、調理、作り方など）→ academic + amateur + academic",
-      creative: "創作系（アート、デザイン、創造など）→ creative + creative + creative",
-      technical: "技術系（AI、プログラミング、システム、IT）→ technical + Academic Visualizer + professional"
-    },
-
-    criticalRule: `⚠️重要：料理・レシピ・チャーシューは必ずacademicとして分類すること`,
 
     responseFormat: `**Minified JSON形式（スペース・改行・インデントなし）**のみで回答し、説明文は含めないでください。トークン数節約のため、整形は不要です。`
   },
@@ -477,25 +391,97 @@ theme: storytelling
 - 論理的な流れを持つ構成`
   },
 
-  // デザイナー戦略プロンプト
-  designerStrategies: {
-    academicVisualizer: {
-      contentPrompt: `
-トピック: {topic}
+  // スタイル戦略プロンプト
+  styleStrategies: {
+    simple: {
+      contentPrompt: `トピック: {topic}
 
-【The Academic Visualizer - レイアウト専門】
+【Simple Style - シンプルで洗練された構成】
 あなたの専門知識を最大限活用し、「{topic}」について最も有用で正確な内容を提供してください。
 
-レイアウト指針:
-- 体系的で構造化された情報配置
-- 論理的階層による明確な情報組織  
-- バランスの取れた視覚的配置
-- 情報密度高めの詳細表示
+スタイル指針:
+- スタイリッシュでクリーンなデザイン
+- データ可視化に適したレイアウト
+- 論理的な情報構成（アジェンダ、結論、次のステップ等の構造化）
+- 構造性と可読性を重視、シンプルな配色
 
-{purposeInstructions}、{themeInstructions}{slideCountInstructions}。
+{slideCountInstructions}。
 {imageInstructions}
 
-{jsonStructureInstructions}`
+{jsonStructureInstructions}`,
+
+      imagePrompt: "プロフェッショナル、クリーンなビジュアル、図表・グラフ・チャート重視、{topic}に関連する高品質でビジネス適用可能な画像",
+      
+      layoutGuidance: "構造性重視のレイアウト、情報の階層化、余白を活用したクリーンなデザイン"
+    },
+
+    education: {
+      contentPrompt: `トピック: {topic}
+
+【Education Style - 教育・学習向け構成】
+あなたの専門知識を最大限活用し、「{topic}」について最も分かりやすく教育的な内容を提供してください。
+
+スタイル指針:
+- 大きく読みやすい文字サイズ
+- イラストやアイコンを多用した分かりやすい構成
+- 図解やステップ形式のレイアウト
+- 専門的なグラフより直感的に理解しやすいビジュアル
+- 視認性と理解しやすさを重視
+
+{slideCountInstructions}。
+{imageInstructions}
+
+{jsonStructureInstructions}`,
+
+      imagePrompt: "分かりやすいイラスト重視、図解・ステップ説明、{topic}の教育に適した親しみやすい画像。子供向けコンテンツの場合は childish imagery OK",
+      
+      layoutGuidance: "視認性重視、大きなフォントサイズ、イラスト・アイコンを多用した分かりやすいレイアウト"
+    },
+
+    marketingOriented: {
+      contentPrompt: `トピック: {topic}
+
+【Marketing-Oriented Style - ビジュアル重視構成】
+あなたの専門知識を最大限活用し、「{topic}」について最も魅力的でインパクトのある内容を提供してください。
+
+スタイル指針:
+- ビジュアルインパクトを重視した構成
+- 製品・サービス写真を中心としたレイアウト
+- 魅力的なデザインとカラースキーム
+- 商品写真風のプレースホルダー画像使用
+- 視覚的インパクトと魅力を重視
+
+{slideCountInstructions}。
+{imageInstructions}
+
+{jsonStructureInstructions}`,
+
+      imagePrompt: "商品写真風、魅力的な製品ビジュアル、{topic}に関連するマーケティング素材として使用可能な高品質画像",
+      
+      layoutGuidance: "視覚的インパクト重視、大きな画像エリア、魅力的な色使いとレイアウト"
+    },
+
+    researchPresentationOriented: {
+      contentPrompt: `トピック: {topic}
+
+【Research Presentation-Oriented Style - 研究発表向け構成】  
+あなたの専門知識を最大限活用し、「{topic}」について最も論理的で研究発表に適した内容を提供してください。
+
+スタイル指針:
+- 論理的な研究発表構成（イントロダクション→方法→結果→考察→結論）
+- 図表や数式の美しい配置
+- PDCAサイクル、SWOT図などのビジネスフレームワーク対応
+- インフォグラフィックス的な効果的情報表示
+- 論理性と構造化された情報表示を重視
+
+{slideCountInstructions}。  
+{imageInstructions}
+
+{jsonStructureInstructions}`,
+
+      imagePrompt: "インフォグラフィック、論理補助図表、PDCA・SWOT等フレームワーク図、{topic}の論理的説明を補助する構造化されたビジュアル",
+      
+      layoutGuidance: "論理性重視、構造化された情報配置、フレームワーク図表を活用したレイアウト"
     },
 
     baseStrategy: {
@@ -549,6 +535,7 @@ theme: storytelling
           "type": "image",
           "src": "",
           "alt": "[画像：サンプル画像の説明]",
+          "prompt": "画像生成用プロンプト",
           "x": 60,
           "y": 30,
           "width": 35,
@@ -559,9 +546,7 @@ theme: storytelling
       "aspectRatio": "16:9"
     }
   ]
-}`,
-
-      imageInstructions: "{frequencyText}{styleInstruction}関連画像を含めて"
+}`
     }
   },
 

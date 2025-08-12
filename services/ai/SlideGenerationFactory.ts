@@ -69,20 +69,20 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
     }
     
     try {
-      // 🚀 統合AI分析システム（1回のAPIコールで効率化）
-      console.log('🚀 Context Intelligence: Starting unified analysis...', request.topic);
-      const unifiedAnalysis = await contextEngine.analyzeWithUnifiedAPI(request.topic, request);
+      // 🚀 新しい簡素化スタイルベース分析システム
+      console.log('🚀 Context Intelligence: Starting simplified style-based analysis...', request.topic);
+      const styleAnalysis = await contextEngine.analyzeWithSimplifiedStyleAPI(request.topic);
       
-      // 🚀 統合分析結果をリクエストに統合
-      const intelligentRequest = this.enhanceRequestWithUnifiedAnalysis(request, unifiedAnalysis);
+      // 🚀 スタイル分析結果をリクエストに統合  
+      const intelligentRequest = this.enhanceRequestWithStyleAnalysis(request, styleAnalysis);
       
-      console.log('🧠 Unified Analysis Results:', {
+      console.log('🧠 Style Analysis Results:', {
         originalTopic: request.topic,
-        unifiedAnalysisResults: unifiedAnalysis,
+        styleAnalysisResults: styleAnalysis,
         enhancedRequest: {
-          designer: intelligentRequest.selectedDesigner,
-          purpose: intelligentRequest.purpose,
-          theme: intelligentRequest.theme
+          selectedStyle: styleAnalysis.selectedStyle,
+          slideCount: intelligentRequest.slideCount,
+          needsPageNumbers: intelligentRequest.needsPageNumbers
         }
       });
       
@@ -108,7 +108,7 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
       
       // 5. 画像生成が必要な場合は処理
       const finalContent = intelligentRequest.includeImages ? 
-        await this.enhanceWithImages(processedContent, designerStrategy, intelligentRequest, unifiedAnalysis) : 
+        await this.enhanceWithImages(processedContent, designerStrategy, intelligentRequest, styleAnalysis) : 
         processedContent;
       
       // 6. Title Slideを追加
@@ -122,8 +122,8 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
           processingTime: Date.now(),
           requestParameters: this.extractRequestMetadata(intelligentRequest),
           contextIntelligence: {
-            unifiedAnalysis: unifiedAnalysis,
-            intelligentEnhancements: this.getUnifiedEnhancements(request, intelligentRequest, unifiedAnalysis)
+            styleAnalysis: styleAnalysis,
+            intelligentEnhancements: this.getStyleEnhancements(request, intelligentRequest, styleAnalysis)
           }
         }
       };
@@ -333,7 +333,7 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
     content: string,
     designerStrategy: DesignerStrategy,
     request: EnhancedSlideRequest,
-    unifiedAnalysis: any
+    styleAnalysis: any
   ): Promise<string> {
     try {
       console.log('🔍 Attempting to parse JSON content, length:', content.length);
@@ -359,13 +359,11 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
       if (parsed.slides && Array.isArray(parsed.slides)) {
         console.log('🎨 Starting Context-Driven Image Enhancement...');
         
-        // 🧠 画像用の簡易コンテンツタイプ分析
+        // 🧠 画像用のスタイルベース分析
         const imageContextAnalysis = {
-          contentType: unifiedAnalysis.contentAnalysis?.contentType || 'story',
-          emotionalTone: 'emotional',
-          suggestedTheme: unifiedAnalysis.themeSelection?.selectedTheme || 'storytelling',
-          suggestedDesigner: unifiedAnalysis.designerSelection?.selectedDesigner || 'The Emotional Storyteller',
-          confidence: 0.9
+          selectedStyle: styleAnalysis.selectedStyle,
+          reason: styleAnalysis.reason,
+          confidence: styleAnalysis.confidence
         };
         
         // 各スライドに対してコンテキスト連動画像生成
@@ -373,25 +371,23 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
           const slide = parsed.slides[i];
           const slideContent = this.extractSlideTextContent(slide);
           
-          // 🎯 Context-Enhanced Image Prompt Generation
-          const contextEnhancedImageContext = {
+          // 🎯 Style-Enhanced Image Prompt Generation
+          const styleEnhancedImageContext = {
             slideIndex: i,
             totalSlides: parsed.slides.length,
-            contextAnalysis: imageContextAnalysis,
-            contentType: imageContextAnalysis.contentType,
-            emotionalTone: imageContextAnalysis.emotionalTone,
-            storyTheme: imageContextAnalysis.suggestedTheme,
+            styleAnalysis: imageContextAnalysis,
+            selectedStyle: imageContextAnalysis.selectedStyle,
             originalTopic: request.topic
           };
           
-          // デザイナー戦略 + コンテキスト情報による画像プロンプト
+          // デザイナー戦略 + スタイル情報による画像プロンプト
           const baseImagePrompt = designerStrategy.buildImagePrompt(
             slideContent, 
-            contextEnhancedImageContext
+            styleEnhancedImageContext
           );
           
-          // 🚀 Revolutionary Context Intelligence Enhancement
-          const enhancedImagePrompt = this.enhanceImagePromptWithContext(
+          // 🚀 Style-Based Enhancement
+          const enhancedImagePrompt = this.enhanceImagePromptWithStyle(
             baseImagePrompt,
             imageContextAnalysis,
             slideContent,
@@ -402,16 +398,16 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
           if (!slide.metadata) slide.metadata = {};
           slide.metadata.imagePrompt = enhancedImagePrompt;
           slide.metadata.baseImagePrompt = baseImagePrompt;
-          slide.metadata.contextIntelligence = {
-            contentType: imageContextAnalysis.contentType,
-            emotionalTone: imageContextAnalysis.emotionalTone,
+          slide.metadata.styleIntelligence = {
+            selectedStyle: imageContextAnalysis.selectedStyle,
+            reason: imageContextAnalysis.reason,
             confidence: imageContextAnalysis.confidence,
-            reasoning: `Context-driven image for ${imageContextAnalysis.contentType} story`
+            reasoning: `Style-driven image for ${imageContextAnalysis.selectedStyle} presentation`
           };
           slide.metadata.imageGenerated = false; // 実際の画像生成は後続処理で
           
           console.log(`🖼️ Enhanced image prompt for slide ${i + 1}:`, {
-            contentType: imageContextAnalysis.contentType,
+            selectedStyle: imageContextAnalysis.selectedStyle,
             promptLength: enhancedImagePrompt.length,
             slideContent: slideContent.substring(0, 50) + '...'
           });
@@ -737,48 +733,47 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
   }
 
   /**
-   * 🚀 統合分析結果によるリクエスト強化
-   * 統合AI分析結果をリクエストに適用
+   * 🚀 スタイル分析結果によるリクエスト強化
+   * 新しい4スタイルベース分析結果をリクエストに適用
    */
-  private enhanceRequestWithUnifiedAnalysis(
+  private enhanceRequestWithStyleAnalysis(
     originalRequest: EnhancedSlideRequest, 
-    unifiedAnalysis: any
+    styleAnalysis: any
   ): EnhancedSlideRequest {
     const enhanced = { ...originalRequest };
 
-    console.log('🚀 Enhancing request with unified analysis...');
+    console.log('🚀 Enhancing request with style-based analysis...');
 
-    // デザイナー自動選択
+    // スタイル情報を設定
+    enhanced.selectedStyle = styleAnalysis.selectedStyle;
+    
+    // スタイルに基づいたデザイナー・テーマ・用途の自動選択
+    const styleMapping = this.mapStyleToDesignerSettings(styleAnalysis.selectedStyle);
+    
     if (!originalRequest.selectedDesigner || originalRequest.selectedDesigner === 'auto') {
-      enhanced.selectedDesigner = unifiedAnalysis.designerSelection.selectedDesigner;
-      console.log(`🎨 Designer auto-selected: ${enhanced.selectedDesigner} (confidence: ${unifiedAnalysis.designerSelection.confidence})`);
+      enhanced.selectedDesigner = styleMapping.designer;
+      console.log(`🎨 Designer mapped from style: ${enhanced.selectedDesigner}`);
     }
 
-    // 用途自動選択
-    if (!originalRequest.purpose || originalRequest.purpose === 'auto') {
-      enhanced.purpose = unifiedAnalysis.purposeSelection.selectedPurpose;
-      console.log(`📋 Purpose auto-selected: ${enhanced.purpose} (confidence: ${unifiedAnalysis.purposeSelection.confidence})`);
-    }
-
-    // テーマ自動選択
     if (!originalRequest.theme || originalRequest.theme === 'auto') {
-      enhanced.theme = unifiedAnalysis.themeSelection.selectedTheme;
-      console.log(`🎭 Theme auto-selected: ${enhanced.theme} (confidence: ${unifiedAnalysis.themeSelection.confidence})`);
+      enhanced.theme = styleMapping.theme;
+      console.log(`🎭 Theme mapped from style: ${enhanced.theme}`);
+    }
+
+    if (!originalRequest.purpose || originalRequest.purpose === 'auto') {
+      enhanced.purpose = styleMapping.purpose;
+      console.log(`📋 Purpose mapped from style: ${enhanced.purpose}`);
     }
 
     // スライド数の調整
     if (!originalRequest.slideCount || originalRequest.slideCountMode === 'auto') {
-      enhanced.slideCount = unifiedAnalysis.additionalSettings.suggestedSlideCount;
+      enhanced.slideCount = styleAnalysis.suggestedSlideCount;
       console.log(`📄 Slide count auto-selected: ${enhanced.slideCount}`);
     }
 
     // その他の設定
-    enhanced.needsPageNumbers = unifiedAnalysis.additionalSettings.needsPageNumbers;
-    enhanced.imageConsistencyLevel = unifiedAnalysis.additionalSettings.imageConsistencyLevel;
-
-    // コンテンツタイプ情報を追加（物語判定用）
-    enhanced.isStoryContent = unifiedAnalysis.contentAnalysis.isStoryContent;
-    enhanced.contentType = unifiedAnalysis.contentAnalysis.contentType;
+    enhanced.needsPageNumbers = styleAnalysis.needsPageNumbers;
+    enhanced.imageConsistencyLevel = styleAnalysis.imageConsistencyLevel;
 
     return enhanced;
   }
@@ -908,48 +903,48 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
   }
 
   /**
-   * 🔍 統合分析強化記録の生成
-   * 統合分析によって何が変更されたかを記録
+   * 🔍 スタイル分析強化記録の生成
+   * スタイル分析によって何が変更されたかを記録
    */
-  private getUnifiedEnhancements(
+  private getStyleEnhancements(
     original: EnhancedSlideRequest, 
     enhanced: EnhancedSlideRequest,
-    unifiedAnalysis: any
+    styleAnalysis: any
   ): any {
     const changes: any = {};
 
-    if (unifiedAnalysis.designerSelection?.selectedDesigner && original.selectedDesigner !== enhanced.selectedDesigner) {
-      changes.designerAutoSelected = {
+    if (original.selectedDesigner !== enhanced.selectedDesigner) {
+      changes.designerMappedFromStyle = {
         from: original.selectedDesigner || 'none',
         to: enhanced.selectedDesigner,
-        reason: `Unified AI analysis: ${unifiedAnalysis.designerSelection.reason}`,
-        confidence: unifiedAnalysis.designerSelection.confidence
+        reason: `Mapped from ${styleAnalysis.selectedStyle} style`,
+        confidence: styleAnalysis.confidence
       };
     }
 
-    if (unifiedAnalysis.purposeSelection?.selectedPurpose && original.purpose !== enhanced.purpose) {
-      changes.purposeAutoSelected = {
+    if (original.purpose !== enhanced.purpose) {
+      changes.purposeMappedFromStyle = {
         from: original.purpose || 'auto',
         to: enhanced.purpose,
-        reason: `Unified AI analysis: ${unifiedAnalysis.purposeSelection.reason}`,
-        confidence: unifiedAnalysis.purposeSelection.confidence
+        reason: `Mapped from ${styleAnalysis.selectedStyle} style`,
+        confidence: styleAnalysis.confidence
       };
     }
 
-    if (unifiedAnalysis.themeSelection?.selectedTheme && original.theme !== enhanced.theme) {
-      changes.themeAutoSelected = {
+    if (original.theme !== enhanced.theme) {
+      changes.themeMappedFromStyle = {
         from: original.theme || 'auto',
         to: enhanced.theme,
-        reason: `Unified AI analysis: ${unifiedAnalysis.themeSelection.reason}`,
-        confidence: unifiedAnalysis.themeSelection.confidence
+        reason: `Mapped from ${styleAnalysis.selectedStyle} style`,
+        confidence: styleAnalysis.confidence
       };
     }
 
-    if (unifiedAnalysis.additionalSettings?.suggestedSlideCount && original.slideCount !== enhanced.slideCount) {
+    if (original.slideCount !== enhanced.slideCount) {
       changes.slideCountAutoSelected = {
         from: original.slideCount || 'auto',
         to: enhanced.slideCount,
-        reason: `Unified AI analysis: ${unifiedAnalysis.additionalSettings.reasoning}`
+        reason: `Style-based analysis: ${styleAnalysis.reason}`
       };
     }
 
@@ -957,19 +952,18 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
   }
 
   /**
-   * 🎨 用途別画像プロンプト強化
-   * PresentationPurposeに基づく適切な画像スタイル選択
+   * 🎨 スタイル別画像プロンプト強化
+   * 4つのスタイルに基づく適切な画像スタイル選択
    */
-  private enhanceImagePromptWithContext(
+  private enhanceImagePromptWithStyle(
     baseImagePrompt: string,
-    contextAnalysis: any,
+    styleAnalysis: any,
     slideContent: string,
     slideIndex: number
   ): string {
-    // 実際の用途を取得（Context Intelligence結果 or デフォルト）
-    const purpose = contextAnalysis.suggestedPurpose || 'business_presentation';
+    const selectedStyle = styleAnalysis.selectedStyle;
     
-    const styleConfig = this.getImageStyleForPurpose(purpose);
+    const styleConfig = this.getImageStyleForNewStyles(selectedStyle);
     
     return `${baseImagePrompt}
 
@@ -978,6 +972,100 @@ Context: ${styleConfig.contextDescription}
 ${styleConfig.specificGuidelines}
 Important: ${styleConfig.prohibitions}
 Note: No text overlays, website URLs, or icons8.com imagery.`;
+  }
+
+  /**
+   * 新しい4スタイル用のスタイル→デザイナー設定マッピング
+   */
+  private mapStyleToDesignerSettings(selectedStyle: 'simple' | 'education' | 'marketing-oriented' | 'research-presentation-oriented'): {
+    designer: DesignerType;
+    theme: string;
+    purpose: string;
+  } {
+    switch (selectedStyle) {
+      case 'simple':
+        return {
+          designer: 'logical',
+          theme: 'minimalist',
+          purpose: 'business_presentation'
+        };
+      case 'education':
+        return {
+          designer: 'The Academic Visualizer', 
+          theme: 'academic',
+          purpose: 'educational_content'
+        };
+      case 'marketing-oriented':
+        return {
+          designer: 'The Vivid Creator',
+          theme: 'creative',
+          purpose: 'marketing_pitch'
+        };
+      case 'research-presentation-oriented':
+        return {
+          designer: 'The Academic Visualizer',
+          theme: 'academic',
+          purpose: 'academic_research'
+        };
+      default:
+        return {
+          designer: 'The Academic Visualizer',
+          theme: 'academic',
+          purpose: 'educational_content'
+        };
+    }
+  }
+
+  /**
+   * 新しい4スタイル用の画像スタイル設定
+   */
+  private getImageStyleForNewStyles(selectedStyle: 'simple' | 'education' | 'marketing-oriented' | 'research-presentation-oriented'): {
+    styleInstruction: string;
+    contextDescription: string;
+    specificGuidelines: string;
+    prohibitions: string;
+  } {
+    switch (selectedStyle) {
+      case 'simple':
+        return {
+          styleInstruction: 'Style: Clean, professional imagery with modern design. Use simple compositions and neutral colors.',
+          contextDescription: 'Simple and refined presentation design',
+          specificGuidelines: 'Focus on clarity and professionalism. Emphasize graphs, charts, and structured layouts.',
+          prohibitions: 'NO cluttered visuals, excessive decoration, or overly complex compositions.'
+        };
+
+      case 'education':
+        return {
+          styleInstruction: 'Style: Clear, educational imagery with large, readable elements. Use friendly colors and approachable design.',
+          contextDescription: 'Educational and learning-focused presentation',
+          specificGuidelines: 'Make it engaging for learners. Use illustrations, icons, and step-by-step visual guidance. For children\'s content, childish imagery is OK.',
+          prohibitions: 'NO complex professional graphs, overly technical imagery, or intimidating visual elements.'
+        };
+
+      case 'marketing-oriented':
+        return {
+          styleInstruction: 'Style: Dynamic, visually impactful imagery showcasing products and services. Use attractive colors and compelling compositions.',
+          contextDescription: 'Marketing and visual-oriented presentation',
+          specificGuidelines: 'Focus on product photography style, attractive visuals for marketing materials. Create placeholder images for actual product photos.',
+          prohibitions: 'NO boring layouts, academic formality, or conservative design elements.'
+        };
+
+      case 'research-presentation-oriented':
+        return {
+          styleInstruction: 'Style: Structured, analytical imagery with focus on data and frameworks. Use infographic-style visuals.',
+          contextDescription: 'Research and analytical presentation',
+          specificGuidelines: 'Emphasize logical frameworks like PDCA cycles, SWOT diagrams, and structured infographics. Support logical thinking with clear visual aids.',
+          prohibitions: 'NO decorative imagery, emotional appeals, or non-analytical visual elements.'
+        };
+
+      default:
+        return {
+          styleInstruction: 'Style: Balanced, professional imagery appropriate for general presentations.',
+          contextDescription: 'General presentation design',
+          specificGuidelines: 'Maintain professionalism while keeping visuals engaging.',
+          prohibitions: 'NO inappropriate or off-topic imagery.'
+        };
+    }
   }
 
   /**

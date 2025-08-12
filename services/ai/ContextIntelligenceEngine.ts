@@ -4,8 +4,7 @@
 // =================================================================
 
 import type { DesignerType, PresentationPurpose, PresentationTheme } from '../../types';
-import * as fs from 'fs';
-import * as yaml from 'js-yaml';
+import { contextIntelligenceResources } from '../../resources/prompts/contextIntelligenceResources';
 
 export interface ContextAnalysis {
   suggestedDesigner: DesignerType;
@@ -66,29 +65,22 @@ export class ContextIntelligenceEngine {
   }
 
   /**
-   * 🎯 リソースベースプロンプト構築：コンテンツタイプ分析
+   * 🎯 新しいスタイルベース分析プロンプト構築
    */
-  private buildContentTypePrompt(topic: string): string {
-    const config = contextIntelligenceResources.contentTypeAnalysis;
-    let prompt = config.systemPrompt + `\n\nリクエスト: "${topic}"\n\n以下から1つ選択してください：\n`;
+  private buildStyleAnalysisPrompt(topic: string): string {
+    const config = contextIntelligenceResources.styleAnalysis;
+    let prompt = config.systemPrompt + `\n\nトピック: "${topic}"\n\n以下のスタイルから最適なものを選択してください：\n\n`;
     
-    // カテゴリ説明を動的構築
-    Object.entries(config.categories).forEach(([key, category]: [string, any]) => {
-      prompt += `- ${key}: ${category.description}\n`;
-      if (category.examples) {
-        prompt += `  例: ${category.examples.map((ex: string) => `"${ex}"`).join(', ')}\n`;
-      }
-      if (category.specialRules) {
-        category.specialRules.forEach((rule: string) => {
-          prompt += `  ⚠️重要: ${rule}\n`;
-        });
-      }
-    });
-
-    // 分類ヒントを追加
-    prompt += `\nキーワード例による分類ヒント:\n`;
-    Object.entries(config.classificationHints).forEach(([key, hint]: [string, any]) => {
-      prompt += `- ${key}: ${hint}\n`;
+    // スタイル説明を動的構築
+    Object.entries(config.styles).forEach(([key, style]: [string, any]) => {
+      prompt += `**${style.name}**\n`;
+      prompt += `説明: ${style.description}\n`;
+      prompt += `特徴:\n`;
+      style.characteristics.forEach((char: string) => {
+        prompt += `  • ${char}\n`;
+      });
+      prompt += `画像スタイル: ${style.imageStyle}\n`;
+      prompt += `レイアウト優先度: ${style.layoutPriority}\n\n`;
     });
 
     prompt += `\n${config.responseFormat}`;
@@ -116,25 +108,32 @@ export class ContextIntelligenceEngine {
   }
   
   /**
-   * 🚀 統合AI分析 - 1回のAPIコールで全て分析
-   * キーワードマッチングを排除し、生成AIによる包括的判定を実現
+   * 🚀 新しい簡素化されたスタイルベース分析
+   * 4つのスタイルから最適なものを選択
    */
-  async analyzeWithUnifiedAPI(topic: string, request: any): Promise<UnifiedAnalysisResult> {
-    console.log('🚀 Starting unified AI analysis:', topic);
+  async analyzeWithSimplifiedStyleAPI(topic: string): Promise<{
+    selectedStyle: 'simple' | 'education' | 'marketing-oriented' | 'research-presentation-oriented';
+    reason: string;
+    confidence: number;
+    suggestedSlideCount: number;
+    needsPageNumbers: boolean;
+    imageConsistencyLevel: 'high' | 'medium' | 'low';
+  }> {
+    console.log('🚀 Starting simplified style-based analysis:', topic);
     
     try {
-      const analysisPrompt = this.buildUnifiedAnalysisPrompt(topic, request);
+      const analysisPrompt = this.buildSimplifiedAnalysisPrompt(topic);
       const aiService = await this.getAIService();
       const rawResponse = await aiService.generateText(analysisPrompt);
       
       // JSON解析を試行
-      const analysisResult = this.parseUnifiedAnalysisResponse(rawResponse);
-      console.log('✅ Unified AI analysis completed:', analysisResult);
+      const analysisResult = this.parseSimplifiedAnalysisResponse(rawResponse);
+      console.log('✅ Simplified style analysis completed:', analysisResult);
       
       return analysisResult;
     } catch (error) {
-      console.error('❌ Unified AI analysis failed, using fallback:', error);
-      return this.createFallbackUnifiedAnalysis(topic, request);
+      console.error('❌ Simplified style analysis failed, using fallback:', error);
+      return this.createFallbackSimplifiedAnalysis(topic);
     }
   }
 
@@ -1113,44 +1112,26 @@ export class ContextIntelligenceEngine {
   // =================================================================
 
   /**
-   * 統合AI分析用のプロンプト構築
+   * 簡素化された分析用のプロンプト構築
    */
-  private buildUnifiedAnalysisPrompt(topic: string, request: any): string {
-    const autoItems = [];
-    if (!request.selectedDesigner || request.selectedDesigner === 'auto') autoItems.push('デザイナー');
-    if (!request.purpose || request.purpose === 'auto') autoItems.push('用途');  
-    if (!request.theme || request.theme === 'auto') autoItems.push('テーマ');
+  private buildSimplifiedAnalysisPrompt(topic: string): string {
+    const config = contextIntelligenceResources.simplifiedAnalysis;
+    
+    return config.systemPrompt.replace('{topic}', topic) + `
 
-    return `トピック: "${topic}"
-
-以下を1回で分析し、厳密なJSON形式で回答してください。
-
-分析対象項目: ${autoItems.join('、')}
+スタイル選択肢:
+- simple: シンプルで洗練されたデザイン、グラフや表を使いやすいレイアウト、論理的な構成をサポート
+- education: 文字サイズを大きくし、イラストやアイコンを多めに配置する教育・学習向けスタイル
+- marketing-oriented: 製品やサービスを魅力的に見せるための写真や動画を配置しやすいビジュアル重視スタイル
+- research-presentation-oriented: 図表や数式をきれいに配置できる研究発表向けスタイル
 
 {
-  "contentAnalysis": {
-    "contentType": "story|business|academic|creative|technical",
-    "注意": "料理・レシピ・チャーシューなどの実用ガイドは academic として分類する",
-    "isStoryContent": true/false,
-    "confidence": 0.0-1.0の数値,
-    "reasoning": "判定理由"
-  },
-  "designerSelection": {
-    "selectedDesigner": "The Academic Visualizer|The Corporate Strategist|The Emotional Storyteller|amateur|creative",
+  "styleSelection": {
+    "selectedStyle": "simple|education|marketing-oriented|research-presentation-oriented",
     "reason": "選択理由",
     "confidence": 0.0-1.0の数値
   },
-  "purposeSelection": {
-    "selectedPurpose": "教育・学習支援|ビジネス・営業プレゼンテーション|ストーリーテリング・物語の共有|研修・トレーニング資料|レポート・報告書|その他",
-    "reason": "選択理由", 
-    "confidence": 0.0-1.0の数値
-  },
-  "themeSelection": {
-    "selectedTheme": "academic|professional|creative|storytelling|minimalist|vibrant",
-    "reason": "選択理由",
-    "confidence": 0.0-1.0の数値
-  },
-  "additionalSettings": {
+  "presentationSettings": {
     "suggestedSlideCount": 推奨スライド数(5-20),
     "needsPageNumbers": true/false,
     "imageConsistencyLevel": "low|medium|high",
@@ -1158,23 +1139,20 @@ export class ContextIntelligenceEngine {
   }
 }
 
-重要な判定基準:
-- 物語系（桃太郎、昔話、童話、紙芝居など）→ story + Emotional Storyteller + storytelling
-- ビジネス系（戦略、分析、ROI、研修など）→ business + Corporate Strategist + professional  
-- 学術系（研究、理論、科学分析など）→ academic + Academic Visualizer + academic
-- 料理系（チャーシュー、レシピ、料理、調理、作り方など）→ academic + amateur + academic
-- 創作系（アート、デザイン、創造など）→ creative + creative + creative  
-- 技術系（AI、プログラミング、システム、IT）→ technical + Academic Visualizer + professional
-
-⚠️重要：料理・レシピ・チャーシューは必ず academic として分類すること
-
-必ずJSON形式のみで回答し、説明文は含めないでください。`;
+${config.responseFormat}`;
   }
 
   /**
-   * AI応答のJSON解析
+   * 簡素化された分析応答のJSON解析
    */
-  private parseUnifiedAnalysisResponse(rawResponse: string): UnifiedAnalysisResult {
+  private parseSimplifiedAnalysisResponse(rawResponse: string): {
+    selectedStyle: 'simple' | 'education' | 'marketing-oriented' | 'research-presentation-oriented';
+    reason: string;
+    confidence: number;
+    suggestedSlideCount: number;
+    needsPageNumbers: boolean;
+    imageConsistencyLevel: 'high' | 'medium' | 'low';
+  } {
     try {
       // JSON部分を抽出（前後の説明文を除去）
       const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
@@ -1185,12 +1163,18 @@ export class ContextIntelligenceEngine {
       const parsed = JSON.parse(jsonMatch[0]);
       
       // 必要な構造を検証
-      if (!parsed.contentAnalysis || !parsed.designerSelection || !parsed.purposeSelection || 
-          !parsed.themeSelection || !parsed.additionalSettings) {
+      if (!parsed.styleSelection || !parsed.presentationSettings) {
         throw new Error('必要なフィールドが不足しています');
       }
       
-      return parsed as UnifiedAnalysisResult;
+      return {
+        selectedStyle: parsed.styleSelection.selectedStyle as 'simple' | 'education' | 'marketing-oriented' | 'research-presentation-oriented',
+        reason: parsed.styleSelection.reason,
+        confidence: parsed.styleSelection.confidence,
+        suggestedSlideCount: parsed.presentationSettings.suggestedSlideCount,
+        needsPageNumbers: parsed.presentationSettings.needsPageNumbers,
+        imageConsistencyLevel: parsed.presentationSettings.imageConsistencyLevel as 'high' | 'medium' | 'low'
+      };
     } catch (error) {
       console.error('JSON解析失敗:', error, 'Raw response:', rawResponse);
       throw error;
@@ -1198,63 +1182,40 @@ export class ContextIntelligenceEngine {
   }
 
   /**
-   * フォールバック時の統合分析結果作成
+   * フォールバック時の簡素化分析結果作成
    */
-  private createFallbackUnifiedAnalysis(topic: string, request: any): UnifiedAnalysisResult {
+  private createFallbackSimplifiedAnalysis(topic: string): {
+    selectedStyle: 'simple' | 'education' | 'marketing-oriented' | 'research-presentation-oriented';
+    reason: string;
+    confidence: number;
+    suggestedSlideCount: number;
+    needsPageNumbers: boolean;
+    imageConsistencyLevel: 'high' | 'medium' | 'low';
+  } {
     const topicLower = topic.toLowerCase();
     
-    // 保険処理としてのキーワードマッチング（最小限）
-    const isStoryContent = this.detectStoryContentFallback(topicLower);
-    let contentType: 'story' | 'business' | 'academic' | 'creative' | 'technical' = 'academic';
-    let designerType: DesignerType = 'The Academic Visualizer';
-    let purpose: PresentationPurpose = '教育・学習支援';
-    let theme: PresentationTheme = 'academic';
+    // 最小限のキーワードマッチング（保険処理）
+    let selectedStyle: 'simple' | 'education' | 'marketing-oriented' | 'research-presentation-oriented' = 'simple';
+    let reason = 'デフォルトのシンプルスタイル';
     
-    if (isStoryContent) {
-      contentType = 'story';
-      designerType = 'The Emotional Storyteller';
-      purpose = 'ストーリーテリング・物語の共有';
-      theme = 'storytelling';
-    } else if (this.detectBusinessContentFallback(topicLower)) {
-      contentType = 'business';
-      designerType = 'The Corporate Strategist';  
-      purpose = 'ビジネス・営業プレゼンテーション';
-      theme = 'professional';
-    } else if (this.detectCreativeContentFallback(topicLower)) {
-      contentType = 'creative';
-      designerType = 'creative';
-      purpose = 'クリエイティブ・芸術表現';
-      theme = 'creative';
+    if (this.detectEducationContentFallback(topicLower)) {
+      selectedStyle = 'education';
+      reason = '教育・学習関連キーワードを検出';
+    } else if (this.detectMarketingContentFallback(topicLower)) {
+      selectedStyle = 'marketing-oriented';
+      reason = 'マーケティング・製品関連キーワードを検出';
+    } else if (this.detectResearchContentFallback(topicLower)) {
+      selectedStyle = 'research-presentation-oriented';
+      reason = '研究・分析関連キーワードを検出';
     }
     
     return {
-      contentAnalysis: {
-        contentType,
-        isStoryContent,
-        confidence: 0.6,
-        reasoning: 'フォールバック分析による判定'
-      },
-      designerSelection: {
-        selectedDesigner: designerType,
-        reason: 'キーワードベース推定',
-        confidence: 0.6
-      },
-      purposeSelection: {
-        selectedPurpose: purpose,
-        reason: 'コンテンツタイプベース推定',
-        confidence: 0.6
-      },
-      themeSelection: {
-        selectedTheme: theme,
-        reason: 'デザイナータイプベース推定', 
-        confidence: 0.6
-      },
-      additionalSettings: {
-        suggestedSlideCount: 10,
-        needsPageNumbers: true,
-        imageConsistencyLevel: 'medium',
-        reasoning: 'デフォルト設定'
-      }
+      selectedStyle,
+      reason,
+      confidence: 0.6,
+      suggestedSlideCount: 10,
+      needsPageNumbers: selectedStyle === 'research-presentation-oriented' || selectedStyle === 'simple',
+      imageConsistencyLevel: 'medium'
     };
   }
 
@@ -1280,6 +1241,30 @@ export class ContextIntelligenceEngine {
   private detectCreativeContentFallback(topicLower: string): boolean {
     const creativeKeywords = ['アート', 'デザイン', '創作', 'クリエイティブ', '芸術'];
     return creativeKeywords.some(keyword => topicLower.includes(keyword));
+  }
+
+  /**
+   * フォールバック用の教育コンテンツ検出（保険処理）
+   */
+  private detectEducationContentFallback(topicLower: string): boolean {
+    const educationKeywords = ['教育', '学習', '授業', '講義', '子供', 'こども', 'キッズ', '初心者', '入門', 'やり方', '使い方', '方法'];
+    return educationKeywords.some(keyword => topicLower.includes(keyword));
+  }
+
+  /**
+   * フォールバック用のマーケティングコンテンツ検出（保険処理）
+   */
+  private detectMarketingContentFallback(topicLower: string): boolean {
+    const marketingKeywords = ['マーケティング', '製品', 'プロダクト', '商品', 'サービス', 'ブランド', '販売', '宣伝', 'PR', '広告'];
+    return marketingKeywords.some(keyword => topicLower.includes(keyword));
+  }
+
+  /**
+   * フォールバック用の研究発表コンテンツ検出（保険処理）
+   */
+  private detectResearchContentFallback(topicLower: string): boolean {
+    const researchKeywords = ['研究', '分析', '調査', '論文', 'データ', '統計', '実験', '結果', '考察', '結論', 'PDCA', 'SWOT'];
+    return researchKeywords.some(keyword => topicLower.includes(keyword));
   }
 
   /**
