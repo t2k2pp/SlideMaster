@@ -252,6 +252,12 @@ export const contextIntelligenceResources: ContextIntelligenceResources = {
 
 {customLayoutRules}
 
+**重要：コンテンツフォーマット制限**
+- contentフィールドでは、HTMLタグを一切使用しないでください
+- <div>、<span>、<br>、style属性などは禁止です
+- 代わりにMarkdown記法を使用してください（**太字**、### 見出し、- リストなど）
+- プレーンテキストまたはMarkdown記法のみ使用可能
+
 **Minified JSON形式（スペース・改行・インデントなし）**で単一スライドとして回答してください。トークン数節約のため、整形は不要です:
 
 {
@@ -261,7 +267,7 @@ export const contextIntelligenceResources: ContextIntelligenceResources = {
     {
       "id": "layer_1",
       "type": "text",
-      "content": "テキスト内容",
+      "content": "テキスト内容（HTMLタグ禁止、Markdown可）",
       "x": 10,
       "y": 20,
       "width": 80,
@@ -512,6 +518,13 @@ theme: storytelling
 
       jsonStructureInstructions: `
 結果は**Minified JSON形式（スペース・改行・インデントなし）**で以下の構造で出力してください。トークン数節約のため、整形は不要です：
+
+**重要：コンテンツフォーマット制限**
+- contentフィールドでは、HTMLタグを一切使用しないでください
+- <div>、<span>、<br>、style属性などは禁止です
+- 代わりにMarkdown記法を使用してください（**太字**、### 見出し、- リストなど）
+- プレーンテキストまたはMarkdown記法のみ使用可能
+
 {
   "title": "プレゼンテーションタイトル",
   "description": "プレゼンテーションの説明",
@@ -523,7 +536,7 @@ theme: storytelling
         {
           "id": "layer-1",
           "type": "text",
-          "content": "スライドの主要コンテンツ",
+          "content": "スライドの主要コンテンツ（HTMLタグ禁止、Markdown可）",
           "x": 10,
           "y": 20,
           "width": 80,
