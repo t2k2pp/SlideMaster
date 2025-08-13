@@ -508,6 +508,8 @@ theme: storytelling
 推奨時間: 1-2分
 注意点: 第一印象が重要なので、明確で自信を持って話してください。`,
 
+      imageInstructions: `画像について: {frequencyText}適切な{styleInstruction}画像を配置してください。画像は内容と一致し、スライドの理解を助けるものにしてください。`,
+
       jsonStructureInstructions: `
 結果は**Minified JSON形式（スペース・改行・インデントなし）**で以下の構造で出力してください。トークン数節約のため、整形は不要です：
 {

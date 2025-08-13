@@ -22,7 +22,7 @@ export class AcademicVisualizerStrategy extends BaseDesignerStrategy {
     const imageInstructions = this.getImageInstructions(request);
     const jsonStructureInstructions = this.getJsonStructureInstructions(request);
 
-    let template = contextIntelligenceResources.designerStrategies.academicVisualizer.contentPrompt;
+    let template = contextIntelligenceResources.styleStrategies.researchPresentationOriented.contentPrompt;
     return template
       .replace(/{topic}/g, request.topic)
       .replace(/{purposeInstructions}/g, purposeInstructions)

@@ -20,35 +20,14 @@ export interface ContextAnalysis {
   imageConsistencyLevel?: 'high' | 'medium' | 'low';
 }
 
-// 🆕 統合分析結果の型定義
-export interface UnifiedAnalysisResult {
-  contentAnalysis: {
-    contentType: 'story' | 'business' | 'academic' | 'creative' | 'technical';
-    isStoryContent: boolean;
-    confidence: number;
-    reasoning: string;
-  };
-  designerSelection: {
-    selectedDesigner: DesignerType;
-    reason: string;
-    confidence: number;
-  };
-  purposeSelection: {
-    selectedPurpose: PresentationPurpose;
-    reason: string;
-    confidence: number;
-  };
-  themeSelection: {
-    selectedTheme: PresentationTheme;
-    reason: string;
-    confidence: number;
-  };
-  additionalSettings: {
-    suggestedSlideCount: number;
-    needsPageNumbers: boolean;
-    imageConsistencyLevel: 'low' | 'medium' | 'high';
-    reasoning: string;
-  };
+// 🆕 新しいスタイル分析結果の型定義
+export interface StyleAnalysisResult {
+  selectedStyle: 'simple' | 'education' | 'marketing-oriented' | 'research-presentation-oriented';
+  reason: string;
+  confidence: number;
+  suggestedSlideCount: number;
+  needsPageNumbers: boolean;
+  imageConsistencyLevel: 'high' | 'medium' | 'low';
 }
 
 /**

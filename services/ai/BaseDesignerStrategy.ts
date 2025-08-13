@@ -13,7 +13,7 @@ import type {
   DesignerType
 } from '../../types';
 import { MarpContentService, type MarpContentOptions, type MarpPresentation } from './MarpContentService';
-import { MarpLayoutService, type LayoutOptions, type JSONPresentation } from './MarpLayoutService';
+import { MarpLayoutService, type LayoutOptions, type JSONPresentation, type JSONSlide } from './MarpLayoutService';
 import { getTextAIService } from './unifiedAIService';
 import { contextIntelligenceResources } from '../../resources/prompts/contextIntelligenceResources';
 
@@ -49,8 +49,7 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
       topic: request.topic,
       slideCount: request.slideCount,
       designer: request.designer,
-      theme: request.theme,
-      purpose: request.purpose
+      theme: request.theme
     });
     
     try {
@@ -100,8 +99,8 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
       const marpPresentation = this.marpContentService.parseMarpResponse(marpResponse);
       console.log('🔍 Parsed Marp presentation:', {
         title: marpPresentation.title,
-        slideCount: marpPresentation.slides.length,
-        hasImages: marpPresentation.slides.some(s => s.imagePrompt)
+        slideCount: marpPresentation.slides?.length || 0,
+        hasImages: marpPresentation.slides?.some(s => s?.imagePrompt) || false
       });
       
       // Phase 2: スライド毎JSONレイアウト生成（トークン制限対策）
@@ -109,6 +108,10 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
       console.log('🎨 Phase 2: Generating JSON layout per slide...');
       
       const generatedSlides: JSONSlide[] = [];
+      
+      if (!marpPresentation.slides || marpPresentation.slides.length === 0) {
+        throw new Error('No slides found in Marp presentation');
+      }
       
       for (let i = 0; i < marpPresentation.slides.length; i++) {
         const slide = marpPresentation.slides[i];
@@ -251,36 +254,20 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
    * PresentationPurposeから適切なコンテンツタイプを推定
    */
   private detectContentType(request: EnhancedSlideRequest): 'story' | 'business' | 'academic' | 'technical' {
-    const purpose = request.purpose;
+    const designer = request.designer || request.selectedDesigner;
     
-    // PresentationPurposeに基づく正確なマッピング
-    switch (purpose) {
-      // ストーリー系
-      case 'storytelling':
-      case 'children_content':
-      case 'creative_project':
-        return 'story';
-      
-      // 学術系
-      case 'academic_research':
-      case 'educational_content':
-      case 'training_material':
+    // 新しい4スタイルシステムに基づくマッピング
+    switch (designer) {
+      case 'education':
         return 'academic';
       
-      // 技術系
-      case 'tutorial_guide':
-      case 'product_demo':
-        return 'technical';
+      case 'research-presentation-oriented':
+        return 'academic';
       
-      // ビジネス系（デフォルト）
-      case 'business_presentation':
-      case 'marketing_pitch':
-      case 'portfolio_showcase':
-      case 'event_announcement':
-      case 'report_summary':
-      case 'game_content':
-      case 'digital_signage':
-      case 'video_storyboard':
+      case 'marketing-oriented':
+        return 'business';
+      
+      case 'simple':
       default:
         return 'business';
     }
@@ -347,15 +334,15 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
    * スライド用Notes構築（デザイナー固有でオーバーライド可能）
    */
   protected buildNotesForSlide(title: string, content: string, slideIndex: number, request: EnhancedSlideRequest): string {
-    const purposeContext = this.getPurposeBasedInstructions(request.purpose);
+    const purposeContext = 'プレゼンテーション形式で';
     
     if (slideIndex === 0) {
-      let template = contextIntelligenceResources.designerStrategies.baseStrategy.speakerNotesIntro;
+      let template = contextIntelligenceResources.styleStrategies.baseStrategy.speakerNotesIntro;
       return template
         .replace(/{title}/g, title)
         .replace(/{content}/g, content.substring(0, 100) + '...');
     } else {
-      let template = contextIntelligenceResources.designerStrategies.baseStrategy.speakerNotesContent;
+      let template = contextIntelligenceResources.styleStrategies.baseStrategy.speakerNotesContent;
       return template
         .replace(/{title}/g, title)
         .replace(/{content}/g, content.substring(0, 150) + '...')
@@ -372,7 +359,7 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
     const titleNotes = this.buildTitleSlideNotes(request);
     
     return {
-      "id": "slide-title",
+      "id": "slide-1",
       "title": this.extractMainTitle(request.topic),
       "layers": titleSlideContent,
       "background": this.getTitleSlideBackground(),
@@ -456,10 +443,10 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
    * Title SlideのSpeaker Notes生成（デザイナー固有でオーバーライド可能）
    */
   protected buildTitleSlideNotes(request: EnhancedSlideRequest): string {
-    const purposeContext = this.getPurposeBasedInstructions(request.purpose);
+    const purposeContext = 'プレゼンテーション形式で';
     const mainTitle = this.extractMainTitle(request.topic);
     
-    let template = contextIntelligenceResources.designerStrategies.baseStrategy.titleSlideNotes;
+    let template = contextIntelligenceResources.styleStrategies.baseStrategy.titleSlideNotes;
     return template
       .replace(/{mainTitle}/g, mainTitle)
       .replace(/{purposeContext}/g, purposeContext);
@@ -590,7 +577,7 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
       styleInstruction = styleMap[request.imageSettings.style] || '';
     }
 
-    let template = contextIntelligenceResources.designerStrategies.baseStrategy.imageInstructions;
+    let template = contextIntelligenceResources.styleStrategies.baseStrategy.imageInstructions;
     return template
       .replace(/{frequencyText}/g, frequencyText)
       .replace(/{styleInstruction}/g, styleInstruction);

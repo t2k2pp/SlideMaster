@@ -366,7 +366,6 @@ export interface SlideGenerationRequest {
   autoSlideCount: boolean;
   slideCountMode?: 'exact' | 'max' | 'min' | 'around'; // 指定ページ、指定ページ以内、指定ページ以上、指定ページ前後
   theme: PresentationTheme;
-  purpose: PresentationPurpose;
   designer?: DesignerType; // Layout strategy designer
   aspectRatio: '16:9' | '4:3' | '1:1' | '9:16' | '3:4';
   includeImages: boolean;

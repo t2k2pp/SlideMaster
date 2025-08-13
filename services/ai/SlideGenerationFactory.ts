@@ -12,13 +12,11 @@ import {
   DesignerType 
 } from './aiServiceInterface';
 
-// デザイナー戦略のインポート
-import { LogicalMinimalistStrategy } from './LogicalMinimalistStrategy';
-import { EmotionalStorytellerStrategy } from './EmotionalStorytellerStrategy';
-import { AcademicVisualizerStrategy } from './AcademicVisualizerStrategy';
-import { VividCreatorStrategy } from './VividCreatorStrategy';
-import { CorporateStrategistStrategy } from './CorporateStrategistStrategy';
-import { AmateurDesignerStrategy } from './AmateurDesignerStrategy';
+// 新しい4スタイル戦略のインポート
+import { SimpleStyleStrategy } from './SimpleStyleStrategy';
+import { EducationStyleStrategy } from './EducationStyleStrategy'; 
+import { MarketingStyleStrategy } from './MarketingStyleStrategy';
+import { ResearchStyleStrategy } from './ResearchStyleStrategy';
 
 // AI サービスのインポート (プロバイダー独立)
 import { getAIService } from './unifiedAIService';
@@ -50,12 +48,10 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
    */
   private initializeStrategies(): void {
     this.designerStrategies = new Map([
-      ['logical', new LogicalMinimalistStrategy()],
-      ['The Emotional Storyteller', new EmotionalStorytellerStrategy()],
-      ['The Academic Visualizer', new AcademicVisualizerStrategy()],
-      ['The Vivid Creator', new VividCreatorStrategy()],
-      ['The Corporate Strategist', new CorporateStrategistStrategy()],
-      ['amateur', new AmateurDesignerStrategy()]
+      ['simple', new SimpleStyleStrategy()],
+      ['education', new EducationStyleStrategy()],
+      ['marketing-oriented', new MarketingStyleStrategy()],
+      ['research-presentation-oriented', new ResearchStyleStrategy()]
     ]);
   }
 
@@ -143,7 +139,6 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
     
     console.log('🎨 Designer Selection Process:', {
       requestedDesigner,
-      purpose: request.purpose,
       theme: request.theme,
       topic: request.topic.substring(0, 30) + '...'
     });
@@ -170,51 +165,31 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
     
     console.log('🔍 Intelligent Context Analysis:', { purpose, theme, slideCount });
 
-    // 🎭 Priority 1: ストーリーテリング特化検出
-    if (this.isStorytellingContent(purpose, theme, topic)) {
-      console.log('📚 Storytelling content detected → The Emotional Storyteller');
-      return this.designerStrategies.get('The Emotional Storyteller')!;
+    // 🎭 教育スタイルの検出
+    if (request.selectedDesigner === 'education') {
+      console.log('📚 Education style detected');
+      return this.designerStrategies.get('education')!;
     }
 
-    // 🏢 Priority 2: ビジネス・企業用途
-    if (this.isBusinessContent(purpose, theme, topic)) {
-      console.log('💼 Business content detected → The Corporate Strategist');
-      return this.designerStrategies.get('The Corporate Strategist')!;
+    // 🏢 マーケティングスタイルの検出
+    if (request.selectedDesigner === 'marketing-oriented') {
+      console.log('💼 Marketing style detected');
+      return this.designerStrategies.get('marketing-oriented')!;
     }
     
-    // 🎓 Priority 3: 学術・教育用途
-    if (this.isAcademicContent(purpose, theme, topic)) {
-      console.log('🎓 Academic content detected → The Academic Visualizer');
-      return this.designerStrategies.get('The Academic Visualizer')!;
+    // 🎓 研究発表スタイルの検出
+    if (request.selectedDesigner === 'research-presentation-oriented') {
+      console.log('🎓 Research style detected');
+      return this.designerStrategies.get('research-presentation-oriented')!;
     }
     
-    // 🎨 Priority 4: クリエイティブ・マーケティング用途
-    if (this.isCreativeContent(purpose, theme, topic)) {
-      console.log('🎨 Creative content detected → The Vivid Creator');
-      return this.designerStrategies.get('The Vivid Creator')!;
-    }
     
-    // 🔧 Priority 5: 技術・論理的コンテンツ
-    if (this.isTechnicalContent(purpose, theme, topic)) {
-      console.log('🔧 Technical content detected → Logical Minimalist');
-      return this.designerStrategies.get('logical')!;
-    }
 
-    // 📊 Priority 6: スライド数に基づく最適化
-    if (slideCount && slideCount <= 3) {
-      console.log('📊 Short presentation → Logical Minimalist (for focus)');
-      return this.designerStrategies.get('logical')!;
-    }
     
-    // 🚀 Priority 7: 大規模プレゼンテーション
-    if (slideCount && slideCount >= 15) {
-      console.log('📈 Large presentation → The Corporate Strategist (for structure)');
-      return this.designerStrategies.get('The Corporate Strategist')!;
-    }
     
-    // 🎯 Default: Contextual fallback based on most common patterns
-    console.log('🎯 Fallback selection → The Vivid Creator (engaging default)');
-    return this.designerStrategies.get('The Vivid Creator')!;
+    // 🎯 デフォルト: simpleスタイル
+    console.log('🎯 Default fallback → Simple Style');
+    return this.designerStrategies.get('simple')!;
   }
 
   // =================================================================
@@ -300,7 +275,6 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
       topic: request.topic,
       slideCount: request.slideCount,
       designer: request.selectedDesigner,
-      purpose: request.purpose,
       theme: request.theme
     });
     
@@ -314,7 +288,6 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
       request.slideCount,
       {
         enhancedPrompt: prompt,
-        purpose: request.purpose,
         theme: request.theme,
         designer: request.selectedDesigner,
         includeImages: request.includeImages
@@ -664,7 +637,6 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
       topic: request.topic,
       slideCount: request.slideCount,
       slideCountMode: request.slideCountMode,
-      purpose: request.purpose,
       theme: request.theme,
       selectedDesigner: request.selectedDesigner,
       includeImages: request.includeImages,
@@ -1192,10 +1164,10 @@ Note: No text overlays, website URLs, or icons8.com imagery.`;
         // Title Slideを生成
         const titleSlide = designerStrategy.generateTitleSlide(request);
         
-        // 既存slidesのIDを調整（title slideが先頭に来るため）
+        // 既存slidesのIDを調整（title slideが先頭に来るため、既存スライドは2番から始まる）
         parsed.slides = parsed.slides.map((slide: any, index: number) => ({
           ...slide,
-          id: slide.id.replace(/slide-(\d+)/, `slide-${index + 1}`)
+          id: `slide-${index + 2}`
         }));
         
         // Title Slideを先頭に追加
