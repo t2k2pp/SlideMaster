@@ -30,22 +30,22 @@ export class ResearchStyleStrategy extends BaseDesignerStrategy {
   }
 
   buildImagePrompt(slideContent: string, imageContext: any): string {
-    // コンテンツ（トピック）を尊重し、スタイルはタッチのみを指定
-    const topic = imageContext?.topic || slideContent;
+    // 各スライドの具体的な内容を使用（全体のトピックではなく）
+    const specificContent = slideContent;
     
     // 画像一貫性設定を考慮
     const consistencyLevel = imageContext?.imageConsistencyLevel || 'medium';
     const consistencyInstruction = this.getConsistencyInstruction(consistencyLevel);
     
-    // contextIntelligenceResourcesからスタイル指示を取得し、{topic}を置換
+    // contextIntelligenceResourcesからスタイル指示を取得し、{topic}を個別スライド内容に置換
     const stylePrompt = contextIntelligenceResources.styleStrategies.researchPresentationOriented.imagePrompt
-      .replace(/{topic}/g, topic);
+      .replace(/{topic}/g, specificContent);
     
     return `${stylePrompt}
 
 ${consistencyInstruction}
 
-Create a clear, accurate image that supports academic understanding while accurately representing the topic and applying only the specified visual touch style.`;
+Create a clear, accurate image that supports academic understanding while accurately representing the specific slide content and applying only the specified visual touch style.`;
   }
 
   getLayoutStrategy() {

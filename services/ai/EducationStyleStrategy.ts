@@ -30,22 +30,22 @@ export class EducationStyleStrategy extends BaseDesignerStrategy {
   }
 
   buildImagePrompt(slideContent: string, imageContext: any): string {
-    // コンテンツ（トピック）を尊重し、スタイルはタッチのみを指定
-    const topic = imageContext?.topic || slideContent;
+    // 各スライドの具体的な内容を使用（全体のトピックではなく）
+    const specificContent = slideContent;
     
     // 画像一貫性設定を考慮
     const consistencyLevel = imageContext?.imageConsistencyLevel || 'medium';
     const consistencyInstruction = this.getConsistencyInstruction(consistencyLevel);
     
-    // contextIntelligenceResourcesからスタイル指示を取得し、{topic}を置換
+    // contextIntelligenceResourcesからスタイル指示を取得し、{topic}を個別スライド内容に置換
     const stylePrompt = contextIntelligenceResources.styleStrategies.education.imagePrompt
-      .replace(/{topic}/g, topic);
+      .replace(/{topic}/g, specificContent);
     
     return `${stylePrompt}
 
 ${consistencyInstruction}
 
-Create an engaging, educational image that accurately represents the topic while applying only the specified visual touch style.`;
+Create an engaging, educational image that accurately represents the specific slide content while applying only the specified visual touch style.`;
   }
 
   getLayoutStrategy() {
