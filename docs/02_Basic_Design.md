@@ -1,754 +1,810 @@
-# 2. 基本設計書 - SlideMaster
+# SlideMaster - 基本設計書 v2.0
 
-## 2.1. 概要
+**文書バージョン**: 2.0  
+**最終更新日**: 2025年8月13日  
+**対象システム**: SlideMaster AI-Powered Presentation Generator  
 
-本ドキュメントは、SlideMasterアプリケーションの基本設計について記述するものです。要件定義書に基づき、**マルチAI統合アーキテクチャ**、**サービス層分離設計**、**拡張されたデータモデル**、および **パフォーマンス最適化設計** を中心としたシステム全体の基本設計を定義します。
+---
 
-### 2.1.1. 設計の特徴
+## 1. システムアーキテクチャ概要
 
-- **マルチAIプロバイダー統合**: 6種類のAIプロバイダー（Gemini、Azure、OpenAI、Claude、LM Studio、Fooocus）の統一インターフェース
-- **完全クライアントサイド**: サーバー不要の高セキュリティ・高プライバシー設計
-- **モジュラーアーキテクチャ**: サービス層分離による保守性・拡張性の確保
-- **高性能レンダリング**: React 19 + WebGL + 仮想化による大規模データ対応
-- **包括的エクスポート**: 9形式対応の高品質エクスポートシステム
+### 1.1 設計の核心思想
 
-## 2.2. システムアーキテクチャ
+**SlideMaster**は、AI統合を軸とした革新的なプレゼンテーション生成プラットフォームとして、以下の設計思想に基づいて構築されています：
 
-SlideMasterは、**マルチAIプロバイダー統合**を核とした、完全クライアントサイドのシングルページアプリケーション（SPA）として構築されます。
+- **AI First Architecture**: Azure OpenAI統合を中心とした自動生成システム
+- **4-Style Strategy Pattern**: 用途別最適化による高品質プレゼンテーション
+- **Marp→JSON 2-Phase Approach**: トークン効率性と表現力の両立
+- **Progressive Rendering**: ユーザー体験向上のための段階的表示
+- **Client-Side Complete**: セキュリティとプライバシーを重視した完全クライアント実装
 
-### 2.2.1. 全体アーキテクチャ
+### 1.2 全体アーキテクチャ
 
 ```mermaid
-graph TD
-    subgraph Client_Browser["🌐 クライアントブラウザ環境"]
-        direction TB
-        
-        subgraph Presentation_Layer["🖥️ プレゼンテーション層"]
-            UI["React 19 UI Components"]
-            Canvas["Canvas + WebGL"]
-            Moveable["react-moveable"]
+graph TB
+    subgraph Browser["🌐 ブラウザ環境"]
+        subgraph UI_Layer["🎨 UI層"]
+            React["React 19.1.0<br/>TypeScript 5.7.2"]
+            Components["コンポーネント群"]
+            Canvas["Canvas + Moveable"]
         end
         
-        subgraph Application_Layer["⚛️ アプリケーション層"]
-            App["App.tsx (中央制御)"]
-            Router["AI Router"]
-            StateManager["State Manager"]
+        subgraph Business_Layer["⚙️ ビジネス層"]
+            App["App.tsx<br/>中央制御システム"]
+            ContextEngine["Context Intelligence<br/>Engine"]
+            StyleEngine["4-Style Strategy<br/>Engine"]
         end
         
         subgraph Service_Layer["🔧 サービス層"]
-            AIServices["AI Services"]
-            CoreServices["Core Services"]
-            ExportServices["Export Services"]
+            AIServices["AI統合サービス"]
+            GenerationServices["生成サービス"]
+            ExportServices["エクスポートサービス"]
+            StorageServices["ストレージサービス"]
         end
         
         subgraph Data_Layer["💾 データ層"]
-            LocalStorage["localStorage (暗号化)"]
+            IndexedDB["IndexedDB<br/>大容量ストレージ"]
+            LocalStorage["localStorage<br/>設定・APIキー"]
             Memory["メモリキャッシュ"]
-            IndexedDB["IndexedDB (大容量)"]
         end
     end
     
-    subgraph External_APIs["🌍 外部AIサービス"]
-        direction LR
-        Google["🔷 Google Gemini"]
-        Azure["🔵 Azure OpenAI"]
-        OpenAI["🟢 OpenAI"]
-        Claude["🟣 Anthropic Claude"]
-        LMStudio["🟡 LM Studio"]
-        Fooocus["🟠 Fooocus"]
+    subgraph External["🌍 外部サービス"]
+        AzureOpenAI["Azure OpenAI<br/>GPT-4o + DALL-E"]
+        VertexAI["Vertex AI<br/>Imagen 画像生成"]
     end
     
-    Presentation_Layer --> Application_Layer
-    Application_Layer --> Service_Layer
+    UI_Layer --> Business_Layer
+    Business_Layer --> Service_Layer
     Service_Layer --> Data_Layer
+    AIServices --> External
     
-    AIServices --> External_APIs
-    
-    style Client_Browser fill:#e3f2fd
-    style External_APIs fill:#fff3e0
+    style Browser fill:#e3f2fd
+    style External fill:#fff3e0
 ```
 
-### 2.2.2. 技術スタック
+### 1.3 技術スタック
 
-**フロントエンド基盤:**
-- **React 19**: 最新のConcurrent Renderingと強化されたHooks
-- **TypeScript 5.7**: 高度な型システムによる開発効率向上
-- **Vite 6.2**: 高速ビルドシステムとHMR対応
+#### **フロントエンド基盤**
+- **React 19.1.0**: 最新のConcurrent Features活用
+- **TypeScript 5.7.2**: 厳密な型システム
+- **Vite 6.2.0**: 高速ビルドシステム
+- **ESLint + Prettier**: コード品質管理
 
-**状態管理:**
-- **App.tsx中央集約**: 1,334行の包括的状態管理
-- **React Hooks**: useState、useCallback、useMemo最適化
-- **コンテキストAPI**: テーマとプロバイダー情報の共有
+#### **UI・UX技術**
+- **Tailwind CSS**: ユーティリティファーストCSS
+- **Lucide React**: モダンアイコンライブラリ
+- **react-moveable**: 高度なレイヤー操作
+- **React Hot Toast**: 通知システム
 
-**データ永続化:**
-- **localStorage**: 設定とAPIキー（暗号化保存）
-- **IndexedDB**: 大容量画像とプレゼンテーションデータ
-- **メモリキャッシュ**: レンダリング最適化用一時データ
+#### **データ管理**
+- **Dexie.js**: IndexedDBラッパー
+- **localStorage**: 軽量設定保存
+- **メモリキャッシュ**: パフォーマンス最適化
 
-**AI統合:**
-- **統一インターフェース**: 6プロバイダー対応のAIRouter
-- **並列処理**: Promise.allによる高速レスポンス
-- **フォールバック**: エラー時の自動プロバイダー切り替え
+#### **エクスポート・統合**
+- **PptxGenJS**: PowerPoint生成
+- **jsPDF**: PDF生成
+- **html-to-image**: 画像変換
+- **file-saver**: ファイルダウンロード
 
-## 2.3. モジュラーコンポーネント設計
+---
 
-### 2.3.1. 階層化コンポーネント構成
+## 2. コアシステム設計
+
+### 2.1 AI統合アーキテクチャ
 
 ```mermaid
 graph TD
-    subgraph App_Core["🏛️ App.tsx (1,334行)"]
-        direction TB
-        
-        AppState["📊 AppState Management"]
-        EventHandlers["⚡ Event Handlers (200+)"]
-        UIController["🎮 UI Controller"]
-    end
-    
-    subgraph UI_Components["🎨 UIコンポーネント層"]
-        direction TB
-        
-        subgraph Core_UI["🖥️ コアUI"]
-            Welcome["Welcome Screen"]
-            Header["Header"]
-            Settings["Settings"]
+    subgraph AI_Integration["🤖 AI統合システム"]
+        subgraph Input_Processing["📥 入力処理"]
+            TopicAnalyzer["トピック解析器"]
+            ContextIntelligence["コンテキスト<br/>インテリジェンス"]
+            StyleSelector["スタイル自動選択"]
         end
         
-        subgraph Editor_UI["✏️ エディターUI"]
-            SlideNavigator["Slide Navigator"]
-            SlideCanvas["Slide Canvas"]
-            LayerEditor["Layer Editor"]
+        subgraph Content_Generation["📝 コンテンツ生成"]
+            MarpGenerator["Marp生成<br/>(第1段階)"]
+            JSONConverter["JSON変換<br/>(第2段階)"]
+            ImageGenerator["画像生成<br/>(並列処理)"]
         end
         
-        subgraph AI_UI["🤖 AI統合UI"]
-            AIAssistant["AI Assistant"]
-            ProviderSelector["Provider Selector"]
-            GenerationHistory["Generation History"]
-        end
-        
-        subgraph Feature_UI["⚡ 機能UI"]
-            ExportManager["Export Manager"]
-            SlideShow["Slide Show"]
-            VideoAnalyzer["Video Analyzer"]
+        subgraph AI_Services["🔗 AIサービス"]
+            UnifiedAI["統合AIサービス"]
+            AzureOpenAI["Azure OpenAI"]
+            VertexImagen["Vertex AI Imagen"]
         end
     end
     
-    App_Core --> UI_Components
+    Input_Processing --> Content_Generation
+    Content_Generation --> AI_Services
+    
+    AzureOpenAI --> UnifiedAI
+    VertexImagen --> ImageGenerator
 ```
 
-### 2.3.2. コンポーネント責務定義
-
-| コンポーネント名 | 責務 | 実装規模 |
-| :--- | :--- | :--- |
-| **App.tsx** | **中央制御システム**: 全状態管理、AIプロバイダー制御、200+イベントハンドラー | 1,334行 |
-| **WelcomeScreen.tsx** | **エントリーポイント**: 新規作成、プロジェクト読込、AI生成、動画分析起動 | 中規模 |
-| **Header.tsx** | **グローバル操作**: 保存、エクスポート、設定、AIアシスタント、プロバイダー切替 | 小規模 |
-| **SlideNavigator.tsx** | **スライド管理**: 一覧表示、追加・削除・複製・順序変更、サムネイル生成 | 中規模 |
-| **SlideCanvas.tsx** | **レイヤー操作**: react-moveable統合、ドラッグ&ドロップ、選択管理 | 大規模 |
-| **LayerEditor.tsx** | **プロパティ編集**: レイヤータイプ別詳細設定、リアルタイム反映 | 大規模 |
-| **AIAssistant.tsx** | **AI統合**: マルチプロバイダー制御、生成履歴、コスト追跡 | 大規模 |
-| **ExportManager.tsx** | **エクスポート制御**: 9形式対応、品質設定、バッチ処理 | 中規模 |
-| **SlideShow.tsx** | **プレゼンテーション再生**: フルスクリーン、キーボード操作、ナビゲーション | 中規模 |
-| **VideoAnalyzer.tsx** | **動画分析**: フレーム抽出、AI分析、マニュアル生成ワークフロー | 中規模 |
-| **Settings.tsx** | **環境設定**: APIキー管理、テーマ設定、プロバイダー優先度設定 | 中規模 |
-
-### 2.3.3. サブコンポーネント構成
+### 2.2 4スタイル戦略システム
 
 ```mermaid
 graph TD
-    subgraph SlideCanvas_Components["🎨 SlideCanvas サブコンポーネント"]
-        SC["SlideCanvas"]
-        SC --> LR["LayerRenderer"]
-        SC --> MH["MoveableHandler"]
-        SC --> SG["SelectionGuide"]
-        SC --> GM["GridManager"]
+    subgraph Style_Strategy["🎨 4スタイル戦略システム"]
+        subgraph Base_Strategy["📋 基本戦略"]
+            BaseDesigner["BaseDesignerStrategy<br/>共通機能抽象化"]
+        end
+        
+        subgraph Concrete_Strategies["🔧 具体戦略"]
+            Simple["SimpleStyleStrategy<br/>シンプル洗練"]
+            Education["EducationStyleStrategy<br/>教育最適化"]
+            Marketing["MarketingStyleStrategy<br/>ビジュアル重視"]
+            Research["ResearchStyleStrategy<br/>学術発表"]
+        end
+        
+        subgraph Strategy_Features["⚡ 戦略機能"]
+            ContentPrompt["コンテンツプロンプト生成"]
+            ImagePrompt["画像プロンプト生成"]
+            LayoutGuidance["レイアウトガイダンス"]
+            StyleOptimization["スタイル最適化"]
+        end
     end
     
-    subgraph AIAssistant_Components["🤖 AIAssistant サブコンポーネント"]
-        AA["AIAssistant"]
-        AA --> PS["ProviderSelector"]
-        AA --> GC["GenerationControls"]
-        AA --> GH["GenerationHistory"]
-        AA --> CT["CostTracker"]
-    end
-    
-    subgraph LayerEditor_Components["✏️ LayerEditor サブコンポーネント"]
-        LE["LayerEditor"]
-        LE --> TEP["TextEditPanel"]
-        LE --> IEP["ImageEditPanel"]
-        LE --> SEP["ShapeEditPanel"]
-        LE --> CP["CommonProperties"]
-    end
+    Base_Strategy --> Concrete_Strategies
+    Concrete_Strategies --> Strategy_Features
 ```
 
-## 2.4. 画面遷移設計
+#### **スタイル別特性**
 
-### 2.4.1. メイン画面遷移
+| スタイル | 適用場面 | ビジュアル特性 | 技術的実装 |
+|---------|----------|---------------|------------|
+| **Simple** | ビジネス・学術・技術 | クリーンデザイン、データ可視化 | 構造化レイアウト、論理階層 |
+| **Education** | 教育・研修・ストーリー | 大きな文字、親しみやすい色彩 | 視認性重視、イラスト中心 |
+| **Marketing** | 商品紹介・営業・ブランディング | ビジュアルインパクト、魅力的配色 | 画像主体、感情訴求 |
+| **Research** | 研究発表・学会・分析報告 | 論理的構成、インフォグラフィック | フレームワーク対応、構造図 |
+
+### 2.3 Marp→JSON二段階生成
 
 ```mermaid
-stateDiagram-v2
-    [*] --> WelcomeScreen : アプリケーション起動
+sequenceDiagram
+    participant User as ユーザー
+    participant CE as Context Engine
+    participant MG as Marp Generator
+    participant JC as JSON Converter
+    participant IG as Image Generator
+    participant UI as UI Layer
     
-    state WelcomeScreen {
-        [*] --> ProjectSelection
-        ProjectSelection --> AIProviderCheck : AI生成選択時
-        AIProviderCheck --> ProviderSetup : APIキー未設定
-        ProviderSetup --> ProjectSelection : 設定完了
-        AIProviderCheck --> AIGeneration : APIキー設定済み
-        AIGeneration --> EditorView : 生成完了
-    }
+    User->>CE: トピック入力
+    CE->>CE: スタイル自動選択
+    CE->>MG: 第1段階：Marp生成
+    MG->>MG: 自然言語構造化
+    MG->>JC: 第2段階：JSON変換
+    JC->>JC: レイヤー構造生成
     
-    WelcomeScreen --> EditorView : 新規作成/読込
-    WelcomeScreen --> VideoAnalysis : 動画分析
-    VideoAnalysis --> EditorView : 分析完了
-    VideoAnalysis --> WelcomeScreen : キャンセル
-    
-    state EditorView {
-        direction TB
-        [*] --> CanvasMode
-        
-        state CanvasMode {
-            [*] --> SlideCanvas
-            SlideCanvas --> LayerEditor : レイヤー選択
-            LayerEditor --> SlideCanvas : 編集完了
-            SlideCanvas --> SlideNavigator : スライド切替
-            SlideNavigator --> SlideCanvas : スライド選択
-        }
-        
-        CanvasMode --> AIAssistant : AI支援
-        AIAssistant --> CanvasMode : 生成完了
-        
-        CanvasMode --> ExportManager : エクスポート
-        ExportManager --> CanvasMode : エクスポート完了
-        
-        CanvasMode --> Settings : 設定
-        Settings --> CanvasMode : 設定完了
-    }
-    
-    EditorView --> SlideShow : プレゼン開始
-    SlideShow --> EditorView : 終了
-    
-    EditorView --> WelcomeScreen : ホーム
-```
-
-### 2.4.2. モーダル管理設計
-
-```mermaid
-graph TD
-    subgraph Modal_Management["📋 モーダル管理"]
-        direction TB
-        
-        ModalStack["Modal Stack Manager"]
-        ModalStack --> AIModal["AI Assistant Modal"]
-        ModalStack --> ExportModal["Export Modal"]
-        ModalStack --> SettingsModal["Settings Modal"]
-        ModalStack --> VideoModal["Video Analysis Modal"]
-        ModalStack --> ConfirmModal["Confirmation Modal"]
+    par 並列画像生成
+        JC->>IG: 画像1生成要求
+        JC->>IG: 画像2生成要求
+        JC->>IG: 画像3生成要求
     end
     
-    subgraph Modal_Features["🔧 モーダル機能"]
-        direction LR
-        
-        ESC["Escキーで閉じる"]
-        Backdrop["背景クリックで閉じる"]
-        Stack["スタック管理"]
-        Focus["フォーカス制御"]
-    end
-    
-    Modal_Management --> Modal_Features
+    IG->>UI: 段階的表示
+    UI->>User: プログレッシブレンダリング
 ```
 
-## 2.5. 拡張されたデータモデル設計
+---
 
-### 2.5.1. 包括的ER図
+## 3. データモデル設計
 
-```mermaid
-erDiagram
-    PRESENTATION {
-        string id PK
-        string title
-        string description
-        PresentationTheme theme "21 themes"
-        PresentationPurpose purpose "16 purposes"
-        ImageGenerationSettings imageSettings
-        PresentationSettings globalSettings
-        AIInteractionHistoryItem[] aiHistory
-        ExportHistoryItem[] exportHistory
-        VersionInfo versionInfo
-        datetime createdAt
-        datetime updatedAt
-    }
+### 3.1 中核データ構造
 
-    SLIDE {
-        string id PK
-        string title
-        string background
-        AspectRatio aspectRatio "16:9, 4:3, 1:1, 9:16, 3:4"
-        string notes
-        PageNumberSettings pageNumbers
-        SlideTemplate template
-        string presentation_id FK
-    }
-
-    LAYER {
-        string id PK
-        LayerType type "text|image|shape"
-        number x "0-100% (percentage)"
-        number y "0-100% (percentage)"
-        number width "0-100% (percentage)"
-        number height "0-100% (percentage)"
-        number rotation "0-360 degrees"
-        number opacity "0-1"
-        number zIndex "rendering order"
-        LayerProperties properties "type-specific data"
-        string slide_id FK
-    }
-
-    AI_INTERACTION_HISTORY {
-        string id PK
-        AIProviderType provider "gemini|azure|openai|claude|lmstudio|fooocus"
-        string requestType "text|image|video_analysis"
-        string prompt
-        json response
-        CostInformation cost
-        datetime timestamp
-        string presentation_id FK
-    }
-
-    EXPORT_HISTORY {
-        string id PK
-        ExportFormat format "pdf|pptx|png|jpeg|svg|html|marp|zip"
-        ExportOptions options
-        boolean success
-        string errorMessage
-        number fileSize
-        datetime exportedAt
-        string presentation_id FK
-    }
-
-    APP_STATE {
-        Presentation currentPresentation
-        number currentSlideIndex
-        CanvasState canvasState
-        string[] selectedLayerIds
-        Layer[] clipboardLayers
-        UndoAction[] undoStack
-        UndoAction[] redoStack
-        boolean isAIProcessing
-        AIInteractionHistoryItem[] aiHistory
-        AppSettings appSettings
-        MultiProviderApiKeyStatus apiKeyStatus
-    }
-
-    PRESENTATION ||--o{ SLIDE : "contains"
-    SLIDE ||--o{ LAYER : "has"
-    PRESENTATION ||--o{ AI_INTERACTION_HISTORY : "tracks"
-    PRESENTATION ||--o{ EXPORT_HISTORY : "logs"
-    APP_STATE ||--o| PRESENTATION : "manages"
-```
-
-### 2.5.2. データ型詳細定義
-
-#### PresentationTheme (21種類)
 ```typescript
-type PresentationTheme = 
-  | 'modern-dark' | 'modern-light' | 'modern-blue' 
-  | 'elegant-white' | 'elegant-cream' | 'elegant-gray'
-  | 'creative-vibrant' | 'creative-pastel' | 'creative-neon'
-  | 'business-formal' | 'business-clean' | 'business-corporate'
-  | 'academic-simple' | 'academic-classic' | 'academic-scientific'
-  | 'storytelling-warm' | 'storytelling-adventure' | 'storytelling-fairytale'
-  | 'tech-minimal' | 'tech-cyber' | 'tech-retro';
-```
-
-#### PresentationPurpose (16種類)
-```typescript
-type PresentationPurpose =
-  | 'business-proposal' | 'business-report' | 'business-strategy'
-  | 'education-lecture' | 'education-training' | 'education-workshop'
-  | 'storytelling-narrative' | 'storytelling-case-study'
-  | 'tech-documentation' | 'tech-api-guide' | 'tech-architecture'
-  | 'marketing-pitch' | 'marketing-campaign'
-  | 'research-findings' | 'research-methodology'
-  | 'personal-portfolio';
-```
-
-#### AIProviderType (6種類)
-```typescript
-type AIProviderType = 
-  | 'gemini'    // Google Gemini Pro/Flash + Imagen
-  | 'azure'     // Azure OpenAI GPT-4 + DALL-E
-  | 'openai'    // OpenAI GPT-4 + DALL-E
-  | 'claude'    // Anthropic Claude 3.5 Sonnet
-  | 'lmstudio'  // Local LM Studio
-  | 'fooocus';  // Fooocus (Stable Diffusion XL)
-```
-
-## 2.6. マルチAIプロバイダー連携
-
-### 2.6.1. AIプロバイダー統合アーキテクチャ
-
-```mermaid
-graph TD
-    subgraph AI_Router["🤖 AI Router (中央制御)"]
-        direction TB
-        
-        RequestAnalyzer["📋 Request Analyzer"]
-        ProviderSelector["🎯 Provider Selector"]
-        LoadBalancer["⚖️ Load Balancer"]
-        ErrorHandler["🚨 Error Handler"]
-    end
-    
-    subgraph Text_Generation["📝 テキスト生成"]
-        direction LR
-        
-        Gemini_Text["🔷 Gemini Pro/Flash"]
-        Azure_Text["🔵 Azure GPT-4"]
-        OpenAI_Text["🟢 OpenAI GPT-4"]
-        Claude_Text["🟣 Claude 3.5 Sonnet"]
-        LMStudio_Text["🟡 LM Studio"]
-    end
-    
-    subgraph Image_Generation["🎨 画像生成"]
-        direction LR
-        
-        Imagen["🔷 Imagen-4"]
-        DALLE_Azure["🔵 DALL-E (Azure)"]
-        DALLE_OpenAI["🟢 DALL-E (OpenAI)"]
-        Fooocus["🟠 Fooocus (SDXL)"]
-    end
-    
-    subgraph Video_Analysis["🎬 動画分析"]
-        GeminiVision["👁️ Gemini Vision"]
-    end
-    
-    AI_Router --> Text_Generation
-    AI_Router --> Image_Generation
-    AI_Router --> Video_Analysis
-```
-
-### 2.6.2. プロバイダー別仕様
-
-#### Google Gemini
-```typescript
-interface GeminiIntegration {
-  library: "@google/genai ^1.9.0";
-  models: {
-    text: ["gemini-2.5-pro", "gemini-2.5-flash"];
-    image: ["imagen-4", "imagen-3"];
-    vision: ["gemini-2.5-pro-vision"];
+// プレゼンテーションデータモデル
+interface Presentation {
+  id: string;
+  title: string;
+  description: string;
+  createdAt: Date;
+  updatedAt: Date;
+  version: string;
+  
+  // メタデータ
+  metadata: {
+    totalSlides: number;
+    estimatedDuration: number;
+    tags: string[];
+    author: string;
+    lastModified: Date;
   };
-  features: [
-    "高速テキスト生成",
-    "多言語対応",
-    "長文解析",
-    "動画フレーム分析",
-    "コスト最適化"
-  ];
-}
-```
-
-#### Azure OpenAI
-```typescript
-interface AzureOpenAIIntegration {
-  library: "@azure/openai ^2.0.0";
-  models: {
-    text: ["gpt-4", "gpt-4-turbo"];
-    image: ["dall-e-3"];
+  
+  // スライド配列
+  slides: Slide[];
+  
+  // 全体設定
+  settings: {
+    theme: string;
+    aspectRatio: AspectRatio;
+    defaultFont: string;
+    colorScheme: ColorScheme;
+    pageNumbering: PageNumberSettings;
   };
-  features: [
-    "エンタープライズ対応",
-    "高品質テキスト",
-    "プロフェッショナル画像",
-    "セキュリティ強化"
-  ];
+  
+  // AI生成履歴
+  aiHistory: AIInteractionRecord[];
 }
-```
 
-#### OpenAI
-```typescript
-interface OpenAIIntegration {
-  library: "openai ^4.28.0";
-  models: {
-    text: ["gpt-4", "gpt-4-turbo"];
-    image: ["dall-e-3"];
+// スライドデータモデル
+interface Slide {
+  id: string;
+  title: string;
+  layers: Layer[];
+  background: string;
+  aspectRatio: AspectRatio;
+  template: SlideTemplate;
+  speakerNotes?: string;
+  
+  // レイアウト情報
+  layout: {
+    type: LayoutType;
+    grid: GridSettings;
+    alignment: AlignmentSettings;
   };
-  features: [
-    "最新モデル対応",
-    "高品質出力",
-    "創造的生成"
-  ];
 }
-```
 
-#### Anthropic Claude
-```typescript
-interface ClaudeIntegration {
-  library: "@anthropic-ai/sdk ^0.17.0";
-  models: {
-    text: ["claude-3.5-sonnet"];
+// レイヤーデータモデル
+interface Layer {
+  id: string;
+  type: LayerType;
+  
+  // 位置・サイズ（パーセンテージ座標系）
+  x: number;        // 0-100%
+  y: number;        // 0-100%
+  width: number;    // 0-100%
+  height: number;   // 0-100%
+  
+  // 描画属性
+  zIndex: number;
+  rotation: number;
+  opacity: number;
+  visible: boolean;
+  
+  // コンテンツ・スタイル
+  content: LayerContent;
+  style: LayerStyle;
+  
+  // メタデータ
+  metadata: {
+    createdAt: Date;
+    modifiedAt: Date;
+    source: 'user' | 'ai' | 'import';
   };
-  features: [
-    "長文処理",
-    "論理的思考",
-    "詳細分析",
-    "安全性重視"
-  ];
 }
 ```
 
-#### LM Studio (ローカル)
+### 3.2 アプリケーション状態管理
+
 ```typescript
-interface LMStudioIntegration {
-  connection: "Local REST API";
-  models: "User-configured local models";
-  features: [
-    "プライバシー保護",
-    "オフライン動作",
-    "カスタムモデル",
-    "コスト削減"
-  ];
+interface AppState {
+  // 現在の作業状態
+  currentPresentation: Presentation | null;
+  currentSlideIndex: number;
+  selectedLayerIds: string[];
+  
+  // キャンバス状態
+  canvasState: {
+    zoom: number;
+    panX: number;
+    panY: number;
+    gridVisible: boolean;
+    gridSnap: boolean;
+    tool: CanvasTool;
+  };
+  
+  // AI処理状態
+  aiState: {
+    isProcessing: boolean;
+    currentOperation: AIOperation | null;
+    progress: ProgressState;
+    history: AIInteractionRecord[];
+  };
+  
+  // UI状態
+  uiState: {
+    activeModal: ModalType | null;
+    sidebarCollapsed: boolean;
+    layerPanelExpanded: boolean;
+    notifications: NotificationItem[];
+  };
+  
+  // アプリケーション設定
+  appSettings: {
+    autoSave: boolean;
+    autoSaveInterval: number;
+    defaultExportFormat: ExportFormat;
+    apiKeys: EncryptedAPIKeys;
+    theme: UITheme;
+  };
+  
+  // 操作履歴（Undo/Redo）
+  history: {
+    undoStack: HistoryAction[];
+    redoStack: HistoryAction[];
+    maxHistorySize: number;
+  };
 }
 ```
 
-#### Fooocus
-```typescript
-interface FooucusIntegration {
-  connection: "REST API";
-  models: ["Stable Diffusion XL Custom"];
-  features: [
-    "アーティスティック画像",
-    "高度なカスタマイズ",
-    "スタイル制御",
-    "品質最適化"
-  ];
-}
-```
+---
 
-### 2.6.3. プロバイダー選択戦略
+## 4. コンポーネント設計
 
-```mermaid
-flowchart TD
-    Request["📥 AI Request"] --> Analyzer{"🔍 Request Analysis"}
-    
-    Analyzer -->|Text Generation| TextStrategy{"📝 Text Strategy"}
-    Analyzer -->|Image Generation| ImageStrategy{"🎨 Image Strategy"}
-    Analyzer -->|Video Analysis| VideoStrategy{"🎬 Video Strategy"}
-    
-    TextStrategy -->|Business/Formal| Azure["🔵 Azure GPT-4"]
-    TextStrategy -->|Creative/General| Gemini["🔷 Gemini Pro"]
-    TextStrategy -->|Long Analysis| Claude["🟣 Claude Sonnet"]
-    TextStrategy -->|Fast/Cost| GeminiFlash["⚡ Gemini Flash"]
-    TextStrategy -->|Local/Private| LMStudio["🟡 LM Studio"]
-    
-    ImageStrategy -->|Professional| Imagen["🎨 Imagen-4"]
-    ImageStrategy -->|Creative| DALLE["🎭 DALL-E"]
-    ImageStrategy -->|Artistic| Fooocus["🖌️ Fooocus"]
-    
-    VideoStrategy --> GeminiVision["👁️ Gemini Vision"]
-    
-    Azure --> Fallback{"🔄 Fallback"}
-    Gemini --> Fallback
-    Claude --> Fallback
-    GeminiFlash --> Fallback
-    LMStudio --> Fallback
-    Imagen --> Fallback
-    DALLE --> Fallback
-    Fooocus --> Fallback
-    GeminiVision --> Fallback
-    
-    Fallback -->|Success| Result["✅ Result"]
-    Fallback -->|Error| NextProvider["🔄 Next Provider"]
-    NextProvider --> Fallback
-```
-
-## 2.7. サービス層分離設計
-
-### 2.7.1. サービスアーキテクチャ
+### 4.1 コンポーネント階層
 
 ```mermaid
 graph TD
-    subgraph Service_Architecture["🔧 サービスアーキテクチャ"]
-        direction TB
-        
-        subgraph AI_Services["🤖 AI Services"]
-            GeminiService["Gemini Service"]
-            AzureService["Azure Service"]
-            OpenAIService["OpenAI Service"]
-            ClaudeService["Claude Service"]
-            LMStudioService["LM Studio Service"]
-            FooucusService["Fooocus Service"]
-        end
-        
-        subgraph Core_Services["⚙️ Core Services"]
-            TextService["Text Processing Service"]
-            VideoService["Video Analysis Service"]
-            StorageService["Storage Service"]
-            HistoryService["History Service"]
-        end
-        
-        subgraph Export_Services["📤 Export Services"]
-            PDFService["PDF Export Service"]
-            PPTXService["PPTX Export Service"]
-            ImageService["Image Export Service"]
-            HTMLService["HTML Export Service"]
-            MarpService["Marp Export Service"]
-            SVGService["SVG Export Service"]
-            ZIPService["ZIP Export Service"]
-        end
+    subgraph App_Core["🏛️ App.tsx（中央制御）"]
+        AppState["アプリケーション状態"]
+        EventRouter["イベントルーター"]
+        AIOrchestrator["AI統合制御"]
     end
     
-    AI_Services --> Core_Services
-    Core_Services --> Export_Services
+    subgraph Layout_Components["📐 レイアウトコンポーネント"]
+        Header["Header<br/>グローバル操作"]
+        Sidebar["SlideNavigator<br/>スライド管理"]
+        Canvas["SlideCanvas<br/>メイン編集エリア"]
+        Properties["LayerEditor<br/>プロパティ編集"]
+    end
+    
+    subgraph Feature_Components["⚡ 機能コンポーネント"]
+        Welcome["WelcomeScreen<br/>エントリーポイント"]
+        AIAssist["AIAssistant<br/>AI統合UI"]
+        Export["ExportManager<br/>エクスポート制御"]
+        Settings["Settings<br/>環境設定"]
+    end
+    
+    subgraph Modal_Components["📋 モーダルコンポーネント"]
+        AIModal["AI Assistant Modal"]
+        ExportModal["Export Options Modal"]
+        SettingsModal["Settings Modal"]
+        ConfirmModal["Confirmation Modal"]
+    end
+    
+    App_Core --> Layout_Components
+    App_Core --> Feature_Components
+    App_Core --> Modal_Components
 ```
 
-### 2.7.2. サービス別責務
+### 4.2 主要コンポーネント設計
 
-#### AI Services
-- **統一インターフェース**: 各AIプロバイダーの抽象化
-- **ロードバランシング**: リクエストの最適分散
-- **エラーハンドリング**: フォールバックとリトライ
-- **コスト管理**: 使用量と料金の追跡
+#### **App.tsx - 中央制御システム**
+```typescript
+interface AppComponent {
+  // 状態管理
+  state: AppState;
+  
+  // AI統合制御
+  aiController: {
+    generateSlides: (topic: string, options: GenerationOptions) => Promise<Presentation>;
+    generateImage: (prompt: string, style: ImageStyle) => Promise<string>;
+    analyzeContent: (content: string) => Promise<ContentAnalysis>;
+  };
+  
+  // イベントハンドリング
+  eventHandlers: {
+    onSlideChange: (index: number) => void;
+    onLayerSelect: (layerId: string) => void;
+    onLayerUpdate: (layerId: string, updates: Partial<Layer>) => void;
+    onStyleChange: (style: PresentationStyle) => void;
+  };
+  
+  // ライフサイクル管理
+  lifecycle: {
+    onMount: () => void;
+    onUnmount: () => void;
+    onSave: () => Promise<void>;
+    onLoad: (presentation: Presentation) => void;
+  };
+}
+```
 
-#### Core Services
-- **テキスト処理**: Markdownレンダリング、スタイル適用
-- **動画分析**: フレーム抽出、AI分析統合
-- **ストレージ**: データ永続化、キャッシュ管理
-- **履歴管理**: AIインタラクション、エクスポート履歴
+#### **SlideCanvas - メイン編集エリア**
+```typescript
+interface SlideCanvasComponent {
+  // レイヤー管理
+  layerManager: {
+    addLayer: (type: LayerType, position: Point) => void;
+    removeLayer: (layerId: string) => void;
+    updateLayer: (layerId: string, updates: Partial<Layer>) => void;
+    reorderLayers: (layerIds: string[]) => void;
+  };
+  
+  // 操作制御
+  operationManager: {
+    handleDrag: (layerId: string, delta: Point) => void;
+    handleResize: (layerId: string, bounds: Bounds) => void;
+    handleRotate: (layerId: string, angle: number) => void;
+    handleSelect: (layerIds: string[]) => void;
+  };
+  
+  // レンダリング最適化
+  renderOptimization: {
+    virtualScrolling: boolean;
+    layerCaching: boolean;
+    webglAcceleration: boolean;
+  };
+}
+```
 
-#### Export Services
-- **フォーマット変換**: 各形式への最適化変換
-- **品質制御**: 解像度、圧縮率の調整
-- **バッチ処理**: 大量スライドの効率処理
-- **メタデータ管理**: 作者情報、作成日時の埋め込み
+---
 
-## 2.8. パフォーマンス最適化設計
+## 5. サービス層設計
 
-### 2.8.1. レンダリング最適化戦略
+### 5.1 AI統合サービス
 
 ```mermaid
 graph TD
-    subgraph Performance_Optimization["🚀 パフォーマンス最適化"]
-        direction TB
-        
-        subgraph React_Optimizations["⚛️ React 19 最適化"]
-            ConcurrentMode["Concurrent Mode"]
-            AutomaticBatching["Automatic Batching"]
-            SmartMemo["Smart Memoization"]
-            SuspenseBoundaries["Suspense Boundaries"]
+    subgraph AI_Services["🤖 AI統合サービス層"]
+        subgraph Unified_Service["🔗 統合AIサービス"]
+            UnifiedAI["UnifiedAIService<br/>プロバイダー抽象化"]
+            RequestRouter["AIRequestRouter<br/>リクエスト分散"]
+            ResponseProcessor["ResponseProcessor<br/>レスポンス処理"]
         end
         
-        subgraph Rendering_Optimizations["🎨 レンダリング最適化"]
-            Virtualization["📋 仮想化"]
-            WebGLAcceleration["⚡ WebGL"]
-            CanvasOptimization["🖼️ Canvas"]
-            LazyLoading["😴 Lazy Loading"]
+        subgraph Provider_Services["🔧 プロバイダーサービス"]
+            AzureService["AzureOpenAIService<br/>テキスト・画像生成"]
+            GeminiService["GeminiService<br/>拡張用実装"]
         end
         
-        subgraph Memory_Management["🧠 メモリ管理"]
-            ObjectPooling["🔄 Object Pool"]
-            ImageCaching["🖼️ Image Cache"]
-            GCOptimization["🗑️ GC最適化"]
-            WeakReferences["🔗 Weak Refs"]
+        subgraph Context_Services["🧠 コンテキストサービス"]
+            ContextEngine["ContextIntelligenceEngine<br/>自動分析"]
+            StyleAnalyzer["StyleAnalyzer<br/>スタイル選択"]
+            TopicProcessor["TopicProcessor<br/>トピック拡張"]
         end
     end
     
-    React_Optimizations --> Rendering_Optimizations
-    Rendering_Optimizations --> Memory_Management
+    Unified_Service --> Provider_Services
+    Unified_Service --> Context_Services
 ```
 
-### 2.8.2. パフォーマンス目標値
+### 5.2 コンテンツ生成サービス
+
+```typescript
+interface ContentGenerationServices {
+  // Marpコンテンツサービス
+  marpContentService: {
+    generateTitle: (options: TitleOptions) => Promise<string>;
+    generateMarpContent: (topic: string, options: MarpOptions) => Promise<MarpPresentation>;
+    parseMarpResponse: (marpText: string) => MarpPresentation;
+  };
+  
+  // レイアウトサービス
+  marpLayoutService: {
+    convertToJSON: (marpSlide: MarpSlide, options: LayoutOptions) => Promise<JSONSlide>;
+    validateJSON: (jsonContent: string) => boolean;
+    repairJSON: (incompleteJSON: string) => string;
+  };
+  
+  // 画像生成サービス
+  imageGenerationService: {
+    generateSlideImage: (prompt: string, options: ImageOptions) => Promise<string>;
+    enhancePrompt: (basePrompt: string, style: ImageStyle) => string;
+    validateImageQuality: (imageUrl: string) => Promise<QualityMetrics>;
+  };
+  
+  // スライド生成ファクトリ
+  slideGenerationFactory: {
+    createStrategy: (style: PresentationStyle) => DesignerStrategy;
+    generateSlides: (request: SlideRequest) => Promise<Presentation>;
+    enhanceContent: (slides: Slide[], enhancements: Enhancement[]) => Promise<Slide[]>;
+  };
+}
+```
+
+### 5.3 エクスポートサービス
+
+```mermaid
+graph TD
+    subgraph Export_Services["📤 エクスポートサービス層"]
+        subgraph Core_Export["🎯 コアエクスポート"]
+            ExportManager["ExportManager<br/>統合制御"]
+            QualityController["QualityController<br/>品質管理"]
+            BatchProcessor["BatchProcessor<br/>一括処理"]
+        end
+        
+        subgraph Format_Services["📋 形式別サービス"]
+            PDFService["PDFExportService"]
+            PPTXService["PPTXExportService"]
+            ImageService["ImageExportService"]
+            HTMLService["HTMLExportService"]
+            MarpService["MarpExportService"]
+            SVGService["SVGExportService"]
+            ZIPService["ZIPExportService"]
+        end
+        
+        subgraph Optimization["⚡ 最適化"]
+            Compression["圧縮最適化"]
+            Resolution["解像度調整"]
+            Metadata["メタデータ管理"]
+        end
+    end
+    
+    Core_Export --> Format_Services
+    Format_Services --> Optimization
+```
+
+---
+
+## 6. パフォーマンス最適化設計
+
+### 6.1 レンダリング最適化
+
+```typescript
+interface PerformanceOptimizations {
+  // React最適化
+  reactOptimizations: {
+    useMemo: "重いコンポーネント計算のメモ化";
+    useCallback: "イベントハンドラーの最適化";
+    useTransition: "非同期更新の優先度制御";
+    useDeferredValue: "重い更新の遅延実行";
+  };
+  
+  // レンダリング最適化
+  renderingOptimizations: {
+    virtualScrolling: "大量スライドの仮想化表示";
+    layerCaching: "レイヤー描画のキャッシュ化";
+    webglAcceleration: "WebGLによるGPU活用";
+    canvasOptimization: "Canvas描画の最適化";
+  };
+  
+  // メモリ管理
+  memoryManagement: {
+    objectPooling: "オブジェクトの再利用";
+    weakReferences: "メモリリーク防止";
+    lazyLoading: "必要時読み込み";
+    imageOptimization: "画像サイズ最適化";
+  };
+  
+  // ネットワーク最適化
+  networkOptimizations: {
+    parallelRequests: "並列AI リクエスト";
+    requestBatching: "リクエストのバッチ化";
+    responseCompression: "レスポンス圧縮";
+    smartCaching: "インテリジェントキャッシュ";
+  };
+}
+```
+
+### 6.2 パフォーマンス指標
 
 ```typescript
 interface PerformanceTargets {
   // Core Web Vitals
   coreWebVitals: {
-    FCP: "< 1.2s";      // First Contentful Paint
-    LCP: "< 2.5s";      // Largest Contentful Paint
-    FID: "< 100ms";     // First Input Delay
-    CLS: "< 0.1";       // Cumulative Layout Shift
+    firstContentfulPaint: "< 1.2s";
+    largestContentfulPaint: "< 2.5s";
+    firstInputDelay: "< 100ms";
+    cumulativeLayoutShift: "< 0.1";
   };
   
-  // アプリケーション指標
-  application: {
-    slideRendering: "< 16ms (60fps)";
+  // アプリケーション固有
+  applicationMetrics: {
+    slideRenderTime: "< 16ms (60fps)";
     layerManipulation: "< 8ms (120fps)";
-    aiResponseTime: "< 30s (text), < 60s (image)";
-    exportSpeed: "> 10 slides/minute";
-    memoryUsage: "< 1GB (100 slides)";
+    aiGenerationTime: "< 180s (8 slides)";
+    exportSpeed: "> 5 slides/minute";
+    memoryUsage: "< 1GB (50 slides)";
   };
   
-  // ユーザーエクスペリエンス
+  // ユーザー体験
   userExperience: {
-    appLaunch: "< 3s";
-    slideSwitch: "< 200ms";
-    undoRedo: "< 50ms";
-    autoSave: "< 2s";
+    appStartup: "< 3s";
+    slideTransition: "< 200ms";
+    undoRedoResponse: "< 50ms";
+    autoSaveTime: "< 2s";
     errorRecovery: "< 1s";
   };
 }
 ```
 
-### 2.8.3. メモリ管理システム
+---
 
-- **仮想化レンダリング**: 大量スライドでも高速表示
-- **WebGLアクセラレーション**: GPUを活用した高速描画
-- **オブジェクトプール**: レイヤーオブジェクトの再利用
-- **イメージキャッシュ**: LRUアルゴリズムによる効率管理
-- **ガベージコレクション最適化**: メモリリーク防止
+## 7. セキュリティ・プライバシー設計
 
-### 2.8.4. ネットワーク最適化
-
-- **並列AIリクエスト**: Promise.allによる高速処理
-- **リトライ機構**: 指数バックオフで失敗耐性向上
-- **キャッシュ管理**: AIレスポンスのスマートキャッシュ
-- **プリロード**: 次のスライドの事前読み込み
-
-## 2.9. セキュリティ設計
-
-### 2.9.1. データ保護戦略
+### 7.1 セキュリティアーキテクチャ
 
 ```mermaid
 graph TD
-    subgraph Security_Architecture["🔒 セキュリティアーキテクチャ"]
-        direction TB
-        
+    subgraph Security_Layers["🔒 セキュリティ層"]
         subgraph Data_Protection["🛡️ データ保護"]
-            Encryption["🔐 暗号化"]
-            Sanitization["🧩 サニタイズ"]
-            Validation["✓ 検証"]
+            Encryption["APIキー暗号化"]
+            Sanitization["入力サニタイズ"]
+            Validation["データ検証"]
         end
         
-        subgraph API_Security["🔑 APIセキュリティ"]
-            KeyManagement["🔑 キー管理"]
-            RateLimit["🚫 レート制限"]
-            HTTPS["🔒 HTTPS"]
+        subgraph Communication["🔗 通信セキュリティ"]
+            HTTPS["HTTPS必須"]
+            HeaderSecurity["セキュアヘッダー"]
+            RateLimit["レート制限"]
         end
         
         subgraph Privacy["🕵️ プライバシー"]
-            LocalOnly["🏠 ローカルのみ"]
-            NoTracking["🚫 追跡なし"]
-            UserControl["👤 ユーザー制御"]
+            LocalOnly["ローカルのみ処理"]
+            NoTracking["追跡なし"]
+            UserControl["ユーザー制御"]
         end
     end
 ```
 
-### 2.9.2. セキュリティ機能
+### 7.2 セキュリティ実装
 
-#### データ暗号化
-- **APIキー**: ブラウザ暗号化APIでローカル暗号化
-- **センシティブデータ**: メモリ上のみで処理
-- **通信**: HTTPSのみ、証明書ピンニング
-
-#### 入力サニタイゼーション
-- **XSS対策**: HTMLエンティティエンコーディング
-- **Markdown**: 危険なスクリプトタグの除去
-- **ファイルアップロード**: タイプ検証、サイズ制限
-
-#### プライバシー保護
-- **データ居住地**: ブラウザローカルのみ
-- **アナリティクス**: ローカルのみ、外部送信なし
-- **AIデータ**: トレーニングデータ使用なし
+```typescript
+interface SecurityImplementations {
+  // データ暗号化
+  dataEncryption: {
+    apiKeyEncryption: "ブラウザ標準暗号化API使用";
+    localStorageEncryption: "AES-256による暗号化";
+    memoryProtection: "センシティブデータのメモリ保護";
+  };
+  
+  // 入力検証
+  inputValidation: {
+    xssProtection: "HTMLエンティティエンコーディング";
+    sqlInjectionPrevention: "パラメータ化クエリ（該当なし）";
+    fileUploadValidation: "ファイル形式・サイズ検証";
+    promptSanitization: "AIプロンプトのサニタイズ";
+  };
+  
+  // 通信セキュリティ
+  communicationSecurity: {
+    httpsOnly: "HTTP通信の完全禁止";
+    apiKeyHeaders: "Authorization ヘッダー使用";
+    certificatePinning: "証明書ピンニング";
+    timeoutSettings: "適切なタイムアウト設定";
+  };
+  
+  // プライバシー保護
+  privacyProtection: {
+    dataResidency: "データのローカル保存のみ";
+    anonymization: "個人情報の匿名化";
+    consentManagement: "ユーザー同意管理";
+    dataMinimization: "最小限データ使用";
+  };
+}
+```
 
 ---
 
-**この基本設計書により、SlideMasterの包括的なシステム設計を把握できます。**
+## 8. 運用・保守設計
+
+### 8.1 エラーハンドリング
+
+```typescript
+interface ErrorHandlingStrategy {
+  // AI API エラー
+  aiApiErrors: {
+    networkErrors: "3回リトライ（指数バックオフ）";
+    rateLimitErrors: "自動待機・再試行";
+    invalidResponses: "JSON修復・フォールバック";
+    authenticationErrors: "ユーザー通知・再設定誘導";
+  };
+  
+  // アプリケーションエラー
+  applicationErrors: {
+    componentErrors: "Error Boundary でキャッチ";
+    stateErrors: "状態リセット・自動復旧";
+    storageErrors: "代替ストレージ・データ復旧";
+    renderingErrors: "フォールバック UI表示";
+  };
+  
+  // ユーザー体験
+  userExperience: {
+    gracefulDegradation: "機能縮退での継続動作";
+    errorReporting: "詳細エラー情報の提供";
+    recoveryGuidance: "復旧手順のガイダンス";
+    dataProtection: "作業中データの保護";
+  };
+}
+```
+
+### 8.2 パフォーマンス監視
+
+```typescript
+interface PerformanceMonitoring {
+  // メトリクス収集
+  metricsCollection: {
+    renderingPerformance: "フレームレート・描画時間";
+    memoryUsage: "メモリ使用量・リーク検出";
+    networkPerformance: "API応答時間・エラー率";
+    userInteractions: "操作応答時間・成功率";
+  };
+  
+  // アラート設定
+  alertSettings: {
+    performanceThresholds: "性能閾値の監視";
+    errorRateThresholds: "エラー率の監視";
+    memoryLeakDetection: "メモリリークの検出";
+    networkFailures: "ネットワーク障害の検出";
+  };
+  
+  // 最適化提案
+  optimizationSuggestions: {
+    automaticTuning: "自動パフォーマンス調整";
+    resourceOptimization: "リソース使用最適化";
+    cacheOptimization: "キャッシュ戦略最適化";
+    userGuidance: "ユーザー向け最適化ガイド";
+  };
+}
+```
+
+---
+
+## 9. 拡張性・将来性設計
+
+### 9.1 拡張ポイント
+
+```mermaid
+graph TD
+    subgraph Extension_Points["🔧 拡張ポイント"]
+        subgraph AI_Extension["🤖 AI拡張"]
+            NewProviders["新AIプロバイダー"]
+            NewModels["新モデル対応"]
+            CustomPrompts["カスタムプロンプト"]
+        end
+        
+        subgraph Style_Extension["🎨 スタイル拡張"]
+            NewStyles["新プレゼンスタイル"]
+            CustomThemes["カスタムテーマ"]
+            TemplateSystem["テンプレートシステム"]
+        end
+        
+        subgraph Export_Extension["📤 エクスポート拡張"]
+            NewFormats["新出力形式"]
+            CloudIntegration["クラウド連携"]
+            APIIntegration["外部API連携"]
+        end
+        
+        subgraph Feature_Extension["⚡ 機能拡張"]
+            PluginSystem["プラグインシステム"]
+            CustomComponents["カスタムコンポーネント"]
+            WorkflowAutomation["ワークフロー自動化"]
+        end
+    end
+```
+
+### 9.2 アーキテクチャの柔軟性
+
+```typescript
+interface ArchitectureFlexibility {
+  // プラグインアーキテクチャ
+  pluginArchitecture: {
+    pluginLoader: "動的プラグイン読み込み";
+    apiStandardization: "標準化されたプラグインAPI";
+    sandboxExecution: "セキュアなプラグイン実行";
+    dependencyManagement: "依存関係管理";
+  };
+  
+  // モジュラー設計
+  modularDesign: {
+    serviceAbstraction: "サービス層の抽象化";
+    componentIsolation: "コンポーネントの独立性";
+    configurationDriven: "設定駆動開発";
+    featureToggling: "機能フラグ管理";
+  };
+  
+  // 国際化対応
+  internationalization: {
+    multiLanguage: "多言語UI対応";
+    localizedContent: "ローカライズコンテンツ";
+    culturalAdaptation: "文化的適応";
+    rtlSupport: "RTL言語対応";
+  };
+  
+  // スケーラビリティ
+  scalability: {
+    horizontalScaling: "水平スケーリング準備";
+    loadDistribution: "負荷分散対応";
+    dataPartitioning: "データ分散";
+    performanceOptimization: "性能最適化フレームワーク";
+  };
+}
+```
+
+---
+
+**この基本設計書により、SlideMasterの技術的詳細と設計思想を包括的に把握できます。現在の実装状況を正確に反映し、将来の拡張性も考慮した設計となっています。**
