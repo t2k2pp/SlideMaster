@@ -111,8 +111,8 @@ export class ContextIntelligenceEngine {
       
       return analysisResult;
     } catch (error) {
-      console.error('❌ Simplified style analysis failed, using fallback:', error);
-      return this.createFallbackSimplifiedAnalysis(topic);
+      console.error('❌ Simplified style analysis failed:', error);
+      throw new Error('スタイル分析に失敗しました。AIサービスの設定を確認するか、しばらく時間をおいてから再度お試しください。');
     }
   }
 
@@ -179,14 +179,17 @@ export class ContextIntelligenceEngine {
     } catch (error) {
       console.error('❌ Individual AI analysis failed:', error);
       // 最小限のフォールバック
+      const contentType = this.simpleContentTypeClassification(topic.toLowerCase());
+      const recommendedStyle = this.getRecommendedStyleForContentType(contentType);
+      
       return {
-        contentType: this.simpleContentTypeClassification(topic.toLowerCase()),
-        suggestedDesigner: 'The Academic Visualizer',
-        suggestedPurpose: '教育・学習支援',
-        suggestedTheme: 'academic',
-        suggestedSlideCount: 10,
-        needsPageNumbers: true,
-        imageConsistencyLevel: 'medium'
+        contentType,
+        suggestedDesigner: recommendedStyle.style,
+        suggestedPurpose: recommendedStyle.purpose,
+        suggestedTheme: recommendedStyle.theme,
+        suggestedSlideCount: recommendedStyle.slideCount,
+        needsPageNumbers: recommendedStyle.pageNumbers,
+        imageConsistencyLevel: recommendedStyle.imageLevel
       };
     }
   }
@@ -194,54 +197,109 @@ export class ContextIntelligenceEngine {
   /**
    * フォールバック分析（AI失敗時）- 簡略版のAI独立分析
    */
-  private async fallbackAnalysis(topic: string): Promise<ContextAnalysis> {
-    console.log('⚠️ Using fallback analysis for:', topic);
-    const topicLower = topic.toLowerCase();
+  // private async fallbackAnalysis(topic: string): Promise<ContextAnalysis> {
+  //   console.log('⚠️ Using fallback analysis for:', topic);
+  //   const topicLower = topic.toLowerCase();
     
-    // 🧠 シンプルなルールベース分類（キーワードマッチング最小限）
-    const contentType = this.simpleContentTypeClassification(topicLower);
-    const bestMatch = this.getDesignerByContentType(contentType, 'professional');
-    const emotionalTone = this.mapContentTypeToEmotionalTone(contentType, bestMatch.designer);
+  //   // 🧠 シンプルなルールベース分類（キーワードマッチング最小限）
+  //   const contentType = this.simpleContentTypeClassification(topicLower);
+  //   const bestMatch = this.getDesignerByContentType(contentType, 'professional');
+  //   const emotionalTone = this.mapContentTypeToEmotionalTone(contentType, bestMatch.designer);
     
-    return {
-      suggestedDesigner: bestMatch.designer,
-      suggestedPurpose: bestMatch.purpose,
-      suggestedTheme: bestMatch.theme,
-      confidence: 0.7, // フォールバックは中程度の信頼度
-      contentType,
-      emotionalTone,
-      // デフォルト設定
-      suggestedSlideCount: contentType === 'story' ? 8 : 10,
-      needsPageNumbers: contentType === 'business' || contentType === 'academic',
-      imageConsistencyLevel: contentType === 'story' ? 'high' : 'medium',
-      reasoning: `フォールバック分析: ${topic}を${contentType}として分類し、${emotionalTone}トーンで${bestMatch.designer}を選択`
-    };
-  }
+  //   return {
+  //     suggestedDesigner: bestMatch.designer,
+  //     suggestedPurpose: bestMatch.purpose,
+  //     suggestedTheme: bestMatch.theme,
+  //     confidence: 0.7, // フォールバックは中程度の信頼度
+  //     contentType,
+  //     emotionalTone,
+  //     // デフォルト設定
+  //     suggestedSlideCount: contentType === 'story' ? 8 : 10,
+  //     needsPageNumbers: contentType === 'business' || contentType === 'academic',
+  //     imageConsistencyLevel: contentType === 'story' ? 'high' : 'medium',
+  //     reasoning: `フォールバック分析: ${topic}を${contentType}として分類し、${emotionalTone}トーンで${bestMatch.designer}を選択`
+  //   };
+  // }
 
   /**
-   * 🔧 シンプルなコンテンツタイプ分類（フォールバック用）
+   * 🔧 初心者向けガイド: コンテンツタイプから推奨スタイルを選択
    */
   private simpleContentTypeClassification(topic: string): ContextAnalysis['contentType'] {
-    // 明確な物語パターン
+    // 物語・ストーリー系 → educationスタイル推奨（読みやすさ重視）
     if (topic.includes('物語') || topic.includes('昔話') || topic.includes('童話') || 
-        topic.includes('の話を') || topic.includes('ストーリー')) {
+        topic.includes('の話') || topic.includes('ストーリー') || topic.includes('桃太郎')) {
       return 'story';
     }
     
-    // 明確な技術パターン  
-    if (topic.includes('gpt') || topic.includes('ai') || topic.includes('技術') ||
-        topic.includes('システム') || topic.includes('api') || topic.includes('エンジニア')) {
-      return 'technical';
+    // マーケティング・営業系 → marketing-orientedスタイル推奨（ビジュアル重視）
+    if (topic.includes('営業') || topic.includes('マーケティング') || topic.includes('商品') ||
+        topic.includes('ブランド') || topic.includes('宣伝') || topic.includes('キャンペーン')) {
+      return 'marketing';
     }
     
-    // 明確なビジネスパターン
-    if (topic.includes('ビジネス') || topic.includes('企業') || topic.includes('営業') ||
-        topic.includes('研修') || topic.includes('戦略')) {
-      return 'business';
+    // 研究・学術系 → research-presentation-orientedスタイル推奨（論理構成重視）
+    if (topic.includes('研究') || topic.includes('学術') || topic.includes('調査') ||
+        topic.includes('分析') || topic.includes('統計') || topic.includes('データ')) {
+      return 'research';
     }
     
-    // デフォルトは学術・教育
-    return 'academic';
+    // デフォルトはsimpleスタイル（汎用的）
+    return 'simple';
+  }
+
+  /**
+   * 🎯 初心者向けガイド: コンテンツタイプに基づく推奨設定
+   */
+  private getRecommendedStyleForContentType(contentType: string): {
+    style: string;
+    purpose: string;
+    theme: string;
+    slideCount: number;
+    pageNumbers: boolean;
+    imageLevel: string;
+  } {
+    switch (contentType) {
+      case 'story':
+        return {
+          style: 'education',
+          purpose: 'educational_content',
+          theme: 'playful',
+          slideCount: 8,
+          pageNumbers: false,
+          imageLevel: 'high'
+        };
+      
+      case 'marketing':
+        return {
+          style: 'marketing-oriented',
+          purpose: 'marketing_pitch',
+          theme: 'creative',
+          slideCount: 12,
+          pageNumbers: true,
+          imageLevel: 'high'
+        };
+      
+      case 'research':
+        return {
+          style: 'research-presentation-oriented',
+          purpose: 'academic_research',
+          theme: 'academic',
+          slideCount: 15,
+          pageNumbers: true,
+          imageLevel: 'medium'
+        };
+      
+      case 'simple':
+      default:
+        return {
+          style: 'simple',
+          purpose: 'business_presentation',
+          theme: 'professional',
+          slideCount: 10,
+          pageNumbers: true,
+          imageLevel: 'medium'
+        };
+    }
   }
 
   /**
@@ -259,8 +317,8 @@ export class ContextIntelligenceEngine {
       console.log('✅ AI classified as:', aiClassification);
       return aiClassification;
     } catch (error) {
-      console.warn('⚠️ AI classification failed, using keyword fallback:', error);
-      return this.keywordBasedFallback(topic);
+      console.error('❌ AI classification failed:', error);
+      throw new Error('コンテンツタイプの分類に失敗しました。AIサービスの接続を確認してください。');
     }
   }
 
@@ -309,19 +367,17 @@ export class ContextIntelligenceEngine {
       try {
         console.log(`🎨 Designer Selection - Attempt ${attempt}/${maxRetries}`);
         
-        const prompt = `コンテンツタイプ"${contentType}"の以下のトピックに最適なデザイナーを選択してください。
+        const prompt = `コンテンツタイプ"${contentType}"の以下のトピックに最適なプレゼンテーションスタイルを選択してください。
 
 トピック: "${topic}"
 
-選択肢:
-- "The Emotional Storyteller": 物語・感動系
-- "The Corporate Strategist": ビジネス・企業系  
-- "logical": 技術・論理的・AI系
-- "The Academic Visualizer": 学術・教育系（理論・研究）
-- "amateur": 実用指導・料理・家庭的な内容
-- "creative": 芸術・創作系
+選択肢（初心者向けガイド）:
+- "simple": シンプルで洗練、論理的構成、データ可視化重視
+- "education": 大きく読みやすい文字、図解・ステップ形式、分かりやすいビジュアル
+- "marketing-oriented": ビジュアルインパクト重視、製品写真中心、魅力的デザイン
+- "research-presentation-oriented": 論理的研究構成、フレームワーク対応、インフォグラフィック
 
-回答形式: デザイナー名のみを英語で回答（例: logical）`;
+回答形式: スタイル名のみを英語で回答（例: simple）`;
 
         const { getTextAIService } = await import('./unifiedAIService');
         const aiService = getTextAIService();
@@ -330,13 +386,13 @@ export class ContextIntelligenceEngine {
           temperature: 0.1
         });
         
-        const designer = this.parseDesignerResponse(response.trim());
+        const designer = this.parsePresentationStyleResponse(response.trim());
         if (designer) {
-          console.log(`✅ Designer selected: ${designer}`);
+          console.log(`✅ Presentation style selected: ${designer}`);
           return designer;
         }
         
-        throw new Error('Invalid designer response');
+        throw new Error('Invalid presentation style response');
         
       } catch (error) {
         console.warn(`⚠️ Designer Selection attempt ${attempt} failed:`, error);
@@ -521,10 +577,10 @@ export class ContextIntelligenceEngine {
     return validTypes.find(type => cleanResponse.includes(type)) || null;
   }
 
-  private parseDesignerResponse(response: string): DesignerType | null {
-    const cleanResponse = response.trim();
-    const validDesigners: DesignerType[] = ['The Emotional Storyteller', 'The Corporate Strategist', 'logical', 'The Academic Visualizer', 'amateur', 'creative'];
-    return validDesigners.find(designer => cleanResponse.includes(designer)) || null;
+  private parsePresentationStyleResponse(response: string): string | null {
+    const cleanResponse = response.trim().toLowerCase();
+    const validStyles = ['simple', 'education', 'marketing-oriented', 'research-presentation-oriented'];
+    return validStyles.find(style => cleanResponse.includes(style)) || null;
   }
 
   private parseThemeResponse(response: string): PresentationTheme | null {
@@ -710,8 +766,8 @@ export class ContextIntelligenceEngine {
         imageConsistencyLevel: this.validateConsistencyLevel(parsed.imageConsistencyLevel)
       };
     } catch (error) {
-      console.warn('🤖 AI comprehensive analysis parsing failed, using fallback:', error);
-      return this.getDefaultComprehensiveSettings();
+      console.error('❌ AI comprehensive analysis parsing failed:', error);
+      throw new Error('総合分析の解析に失敗しました。AIの応答が不正な形式です。再度お試しください。');
     }
   }
 
@@ -760,20 +816,6 @@ export class ContextIntelligenceEngine {
     return validLevels.includes(level as 'high' | 'medium' | 'low') ? level as 'high' | 'medium' | 'low' : 'medium';
   }
 
-  /**
-   * デフォルト包括設定
-   */
-  private getDefaultComprehensiveSettings() {
-    return {
-      contentType: 'academic' as ContextAnalysis['contentType'],
-      suggestedDesigner: 'The Academic Visualizer' as DesignerType,
-      suggestedPurpose: '教育・学習支援' as PresentationPurpose,
-      suggestedTheme: 'academic' as PresentationTheme,
-      suggestedSlideCount: 10,
-      needsPageNumbers: true,
-      imageConsistencyLevel: 'medium' as 'high' | 'medium' | 'low'
-    };
-  }
 
   /**
    * 包括的理由生成（AI分析結果用）
@@ -811,76 +853,76 @@ export class ContextIntelligenceEngine {
    * 代替：AI分析ベースの統合Purpose選択に置き換え
    */
 
-  /**
-   * 🎯 Phase 3.2: 不適切な組み合わせ検出・修正システム
-   * デザイナーとPurposeの組み合わせの適合性をチェック
-   */
-  validateDesignerPurposeCombination(
-    designer: DesignerType, 
-    purpose: PresentationPurpose, 
-    topic: string
-  ): { isValid: boolean; suggestedPurpose?: PresentationPurpose; reason?: string } {
+  // /**
+  //  * 🎯 Phase 3.2: 不適切な組み合わせ検出・修正システム
+  //  * デザイナーとPurposeの組み合わせの適合性をチェック
+  //  */
+  // validateDesignerPurposeCombination(
+  //   designer: DesignerType, 
+  //   purpose: PresentationPurpose, 
+  //   topic: string
+  // ): { isValid: boolean; suggestedPurpose?: PresentationPurpose; reason?: string } {
     
-    // 不適切な組み合わせの検出と修正
-    const inappropriateCombinations = [
-      {
-        condition: designer === 'The Emotional Storyteller' && purpose === 'technical_documentation',
-        suggestedPurpose: 'storytelling' as PresentationPurpose,
-        reason: 'Emotional Storytellerは技術文書よりもストーリーテリングに適しています'
-      },
-      {
-        condition: designer === 'The Corporate Strategist' && purpose === 'storytelling',
-        suggestedPurpose: 'business_presentation' as PresentationPurpose,
-        reason: 'Corporate Strategistはストーリーテリングよりもビジネスプレゼンに適しています'
-      },
-      {
-        condition: designer === 'amateur' && purpose === 'academic_research',
-        suggestedPurpose: 'tutorial_guide' as PresentationPurpose,
-        reason: 'Amateur Designerは学術研究よりもチュートリアル形式に適しています'
-      },
-      {
-        condition: designer === 'The Academic Visualizer' && purpose === 'storytelling' && !topic.toLowerCase().includes('物語'),
-        suggestedPurpose: 'educational_content' as PresentationPurpose,
-        reason: 'Academic Visualizerは物語以外ではストーリーテリングよりも教育コンテンツに適しています'
-      }
-    ];
+  //   // 不適切な組み合わせの検出と修正
+  //   const inappropriateCombinations = [
+  //     {
+  //       condition: designer === 'The Emotional Storyteller' && purpose === 'technical_documentation',
+  //       suggestedPurpose: 'storytelling' as PresentationPurpose,
+  //       reason: 'Emotional Storytellerは技術文書よりもストーリーテリングに適しています'
+  //     },
+  //     {
+  //       condition: designer === 'The Corporate Strategist' && purpose === 'storytelling',
+  //       suggestedPurpose: 'business_presentation' as PresentationPurpose,
+  //       reason: 'Corporate Strategistはストーリーテリングよりもビジネスプレゼンに適しています'
+  //     },
+  //     {
+  //       condition: designer === 'amateur' && purpose === 'academic_research',
+  //       suggestedPurpose: 'tutorial_guide' as PresentationPurpose,
+  //       reason: 'Amateur Designerは学術研究よりもチュートリアル形式に適しています'
+  //     },
+  //     {
+  //       condition: designer === 'The Academic Visualizer' && purpose === 'storytelling' && !topic.toLowerCase().includes('物語'),
+  //       suggestedPurpose: 'educational_content' as PresentationPurpose,
+  //       reason: 'Academic Visualizerは物語以外ではストーリーテリングよりも教育コンテンツに適しています'
+  //     }
+  //   ];
     
-    for (const combo of inappropriateCombinations) {
-      if (combo.condition) {
-        return {
-          isValid: false,
-          suggestedPurpose: combo.suggestedPurpose,
-          reason: combo.reason
-        };
-      }
-    }
+  //   for (const combo of inappropriateCombinations) {
+  //     if (combo.condition) {
+  //       return {
+  //         isValid: false,
+  //         suggestedPurpose: combo.suggestedPurpose,
+  //         reason: combo.reason
+  //       };
+  //     }
+  //   }
     
-    return { isValid: true };
-  }
+  //   return { isValid: true };
+  // }
 
-  /**
-   * 🚨 REMOVED: キーワードマッチング削除
-   * フォールバック用AI分析（キーワードマッチング廃止）
-   */
-  private async aiBasedFallback(topic: string): Promise<ContextAnalysis['contentType']> {
-    console.log('⚠️ Using AI-based fallback analysis');
-    try {
-      // 簡略版AI分析
-      const prompt = this.buildFallbackContentTypePrompt(topic);
-      const { getTextAIService } = await import('./unifiedAIService');
-      const aiService = getTextAIService();
+  // /**
+  //  * 🚨 REMOVED: キーワードマッチング削除
+  //  * フォールバック用AI分析（キーワードマッチング廃止）
+  //  */
+  // private async aiBasedFallback(topic: string): Promise<ContextAnalysis['contentType']> {
+  //   console.log('⚠️ Using AI-based fallback analysis');
+  //   try {
+  //     // 簡略版AI分析
+  //     const prompt = this.buildFallbackContentTypePrompt(topic);
+  //     const { getTextAIService } = await import('./unifiedAIService');
+  //     const aiService = getTextAIService();
       
-      const response = await aiService.generateText(prompt, {
-        temperature: 0.1
-      });
+  //     const response = await aiService.generateText(prompt, {
+  //       temperature: 0.1
+  //     });
       
-      return this.parseContentTypeResponse(response.trim()) || 'academic';
-    } catch (error) {
-      console.error('❌ AI fallback failed:', error);
-      // 最後の手段：デフォルト
-      return 'academic';
-    }
-  }
+  //     return this.parseContentTypeResponse(response.trim()) || 'academic';
+  //   } catch (error) {
+  //     console.error('❌ AI fallback failed:', error);
+  //     // 最後の手段：デフォルト
+  //     return 'academic';
+  //   }
+  // }
 
   /**
    * 🚨 REMOVED: 全てのキーワードマッチングメソッド削除
@@ -896,195 +938,195 @@ export class ContextIntelligenceEngine {
    * 代替：全てAI分析ベースに切り替え
    */
 
-  /**
-   * 🚨 SIMPLIFIED: 感情トーン分析簡略化
-   * キーワードマッチング廃止、AI分析結果ベースのマッピングのみ
-   */
-  private analyzeEmotionalTone(contentType: ContextAnalysis['contentType']): ContextAnalysis['emotionalTone'] {
-    // AI分析結果ベースのシンプルマッピング
-    switch (contentType) {
-      case 'story':
-        return 'emotional';
-      case 'creative':
-        return 'inspiring';
-      case 'technical':
-        return 'logical';
-      case 'business':
-      case 'academic':
-      default:
-        return 'professional';
-    }
-  }
+  // /**
+  //  * 🚨 SIMPLIFIED: 感情トーン分析簡略化
+  //  * キーワードマッチング廃止、AI分析結果ベースのマッピングのみ
+  //  */
+  // private analyzeEmotionalTone(contentType: ContextAnalysis['contentType']): ContextAnalysis['emotionalTone'] {
+  //   // AI分析結果ベースのシンプルマッピング
+  //   switch (contentType) {
+  //     case 'story':
+  //       return 'emotional';
+  //     case 'creative':
+  //       return 'inspiring';
+  //     case 'technical':
+  //       return 'logical';
+  //     case 'business':
+  //     case 'academic':
+  //     default:
+  //       return 'professional';
+  //   }
+  // }
 
-  /**
-   * コンテキストマッピングの定義
-   */
-  private getContextMappings() {
-    return [
-      // 🎭 ストーリーテリング特化
-      {
-        patterns: ['桃太郎', '昔話', '物語', 'ストーリー', 'お話', '童話', '民話', '伝説'],
-        designer: 'The Emotional Storyteller' as DesignerType,
-        purpose: 'ストーリーテリング・物語の共有' as PresentationPurpose,
-        theme: 'storytelling' as PresentationTheme,
-        confidence: 0.95
-      },
+  // /**
+  //  * コンテキストマッピングの定義
+  //  */
+  // private getContextMappings() {
+  //   return [
+  //     // 🎭 ストーリーテリング特化
+  //     {
+  //       patterns: ['桃太郎', '昔話', '物語', 'ストーリー', 'お話', '童話', '民話', '伝説'],
+  //       designer: 'The Emotional Storyteller' as DesignerType,
+  //       purpose: 'ストーリーテリング・物語の共有' as PresentationPurpose,
+  //       theme: 'storytelling' as PresentationTheme,
+  //       confidence: 0.95
+  //     },
       
-      // 🏢 企業・ビジネス
-      {
-        patterns: ['企業', 'ビジネス', '戦略', '売上', '営業', 'マーケティング'],
-        designer: 'The Corporate Strategist' as DesignerType,
-        purpose: 'ビジネス・企業プレゼンテーション' as PresentationPurpose,
-        theme: 'corporate' as PresentationTheme,
-        confidence: 0.9
-      },
+  //     // 🏢 企業・ビジネス
+  //     {
+  //       patterns: ['企業', 'ビジネス', '戦略', '売上', '営業', 'マーケティング'],
+  //       designer: 'The Corporate Strategist' as DesignerType,
+  //       purpose: 'ビジネス・企業プレゼンテーション' as PresentationPurpose,
+  //       theme: 'corporate' as PresentationTheme,
+  //       confidence: 0.9
+  //     },
 
-      // 🎓 学術・教育
-      {
-        patterns: ['研究', '学習', '教育', '講義', '授業', '学術', '分析'],
-        designer: 'The Academic Visualizer' as DesignerType,
-        purpose: '教育・学習支援' as PresentationPurpose,
-        theme: 'academic' as PresentationTheme,
-        confidence: 0.85
-      },
+  //     // 🎓 学術・教育
+  //     {
+  //       patterns: ['研究', '学習', '教育', '講義', '授業', '学術', '分析'],
+  //       designer: 'The Academic Visualizer' as DesignerType,
+  //       purpose: '教育・学習支援' as PresentationPurpose,
+  //       theme: 'academic' as PresentationTheme,
+  //       confidence: 0.85
+  //     },
 
-      // 🎨 クリエイティブ
-      {
-        patterns: ['アート', 'デザイン', 'クリエイティブ', '創作', '表現', '芸術'],
-        designer: 'The Vivid Creator' as DesignerType,
-        purpose: 'クリエイティブワーク・アート' as PresentationPurpose,
-        theme: 'creative' as PresentationTheme,
-        confidence: 0.9
-      },
+  //     // 🎨 クリエイティブ
+  //     {
+  //       patterns: ['アート', 'デザイン', 'クリエイティブ', '創作', '表現', '芸術'],
+  //       designer: 'The Vivid Creator' as DesignerType,
+  //       purpose: 'クリエイティブワーク・アート' as PresentationPurpose,
+  //       theme: 'creative' as PresentationTheme,
+  //       confidence: 0.9
+  //     },
 
-      // 🔧 技術・AI・エンジニアリング  
-      {
-        patterns: ['技術', 'エンジニア', 'システム', 'プログラミング', 'IT', 'AI', 'gpt', '人工知能', '機械学習', 'アルゴリズム', 'ソフトウェア', 'api'],
-        designer: 'logical' as DesignerType,
-        purpose: '技術説明・エンジニアリング' as PresentationPurpose,
-        theme: 'technical' as PresentationTheme,
-        confidence: 0.9
-      }
-    ];
-  }
+  //     // 🔧 技術・AI・エンジニアリング  
+  //     {
+  //       patterns: ['技術', 'エンジニア', 'システム', 'プログラミング', 'IT', 'AI', 'gpt', '人工知能', '機械学習', 'アルゴリズム', 'ソフトウェア', 'api'],
+  //       designer: 'logical' as DesignerType,
+  //       purpose: '技術説明・エンジニアリング' as PresentationPurpose,
+  //       theme: 'technical' as PresentationTheme,
+  //       confidence: 0.9
+  //     }
+  //   ];
+  // }
 
-  /**
-   * 最適マッチの検索
-   */
-  private findBestMatch(topic: string, contextMap: any[]) {
-    let bestMatch = contextMap[0];
-    let maxScore = 0;
+  // /**
+  //  * 最適マッチの検索
+  //  */
+  // private findBestMatch(topic: string, contextMap: any[]) {
+  //   let bestMatch = contextMap[0];
+  //   let maxScore = 0;
 
-    for (const context of contextMap) {
-      const score = this.calculateMatchScore(topic, context.patterns);
-      if (score > maxScore) {
-        maxScore = score;
-        bestMatch = context;
-      }
-    }
+  //   for (const context of contextMap) {
+  //     const score = this.calculateMatchScore(topic, context.patterns);
+  //     if (score > maxScore) {
+  //       maxScore = score;
+  //       bestMatch = context;
+  //     }
+  //   }
 
-    return {
-      suggestedDesigner: bestMatch.designer,
-      suggestedPurpose: bestMatch.purpose,
-      suggestedTheme: bestMatch.theme,
-      confidence: Math.min(bestMatch.confidence * maxScore, 1.0)
-    };
-  }
+  //   return {
+  //     suggestedDesigner: bestMatch.designer,
+  //     suggestedPurpose: bestMatch.purpose,
+  //     suggestedTheme: bestMatch.theme,
+  //     confidence: Math.min(bestMatch.confidence * maxScore, 1.0)
+  //   };
+  // }
 
-  /**
-   * コンテンツタイプと感情トーンによる補正
-   */
-  private refineByTypeAndTone(
-    match: any, 
-    contentType: string, 
-    emotionalTone: string
-  ) {
-    // ストーリー系の場合はEmotional Storytellerを優先
-    if (contentType === 'story') {
-      return {
-        ...match,
-        suggestedDesigner: 'The Emotional Storyteller' as DesignerType,
-        suggestedPurpose: 'ストーリーテリング・物語の共有' as PresentationPurpose,
-        suggestedTheme: 'storytelling' as PresentationTheme,
-        confidence: Math.max(match.confidence, 0.9)
-      };
-    }
+  // /**
+  //  * コンテンツタイプと感情トーンによる補正
+  //  */
+  // private refineByTypeAndTone(
+  //   match: any, 
+  //   contentType: string, 
+  //   emotionalTone: string
+  // ) {
+  //   // ストーリー系の場合はEmotional Storytellerを優先
+  //   if (contentType === 'story') {
+  //     return {
+  //       ...match,
+  //       suggestedDesigner: 'The Emotional Storyteller' as DesignerType,
+  //       suggestedPurpose: 'ストーリーテリング・物語の共有' as PresentationPurpose,
+  //       suggestedTheme: 'storytelling' as PresentationTheme,
+  //       confidence: Math.max(match.confidence, 0.9)
+  //     };
+  //   }
 
-    // 感情的トーンの場合
-    if (emotionalTone === 'emotional') {
-      return {
-        ...match,
-        suggestedDesigner: 'The Emotional Storyteller' as DesignerType,
-        confidence: Math.max(match.confidence, 0.8)
-      };
-    }
+  //   // 感情的トーンの場合
+  //   if (emotionalTone === 'emotional') {
+  //     return {
+  //       ...match,
+  //       suggestedDesigner: 'The Emotional Storyteller' as DesignerType,
+  //       confidence: Math.max(match.confidence, 0.8)
+  //     };
+  //   }
 
-    // クリエイティブトーンの場合
-    if (emotionalTone === 'inspiring' || emotionalTone === 'playful') {
-      return {
-        ...match,
-        suggestedDesigner: 'The Vivid Creator' as DesignerType,
-        confidence: Math.max(match.confidence, 0.8)
-      };
-    }
+  //   // クリエイティブトーンの場合
+  //   if (emotionalTone === 'inspiring' || emotionalTone === 'playful') {
+  //     return {
+  //       ...match,
+  //       suggestedDesigner: 'The Vivid Creator' as DesignerType,
+  //       confidence: Math.max(match.confidence, 0.8)
+  //     };
+  //   }
 
-    return match;
-  }
+  //   return match;
+  // }
 
   /**
    * コンテンツタイプに基づく直接的なデザイナーマッピング
    */
-  private getDesignerByContentType(contentType: ContextAnalysis['contentType'], emotionalTone: ContextAnalysis['emotionalTone']) {
-    switch (contentType) {
-      case 'story':
-        return {
-          designer: 'The Emotional Storyteller' as DesignerType,
-          purpose: 'ストーリーテリング・物語の共有' as PresentationPurpose,
-          theme: 'storytelling' as PresentationTheme,
-          confidence: 0.95
-        };
+  // private getDesignerByContentType(contentType: ContextAnalysis['contentType'], emotionalTone: ContextAnalysis['emotionalTone']) {
+  //   switch (contentType) {
+  //     case 'story':
+  //       return {
+  //         designer: 'The Emotional Storyteller' as DesignerType,
+  //         purpose: 'ストーリーテリング・物語の共有' as PresentationPurpose,
+  //         theme: 'storytelling' as PresentationTheme,
+  //         confidence: 0.95
+  //       };
 
-      case 'technical':
-        return {
-          designer: 'logical' as DesignerType,
-          purpose: '技術説明・エンジニアリング' as PresentationPurpose,
-          theme: 'technical' as PresentationTheme,
-          confidence: 0.9
-        };
+  //     case 'technical':
+  //       return {
+  //         designer: 'logical' as DesignerType,
+  //         purpose: '技術説明・エンジニアリング' as PresentationPurpose,
+  //         theme: 'technical' as PresentationTheme,
+  //         confidence: 0.9
+  //       };
 
-      case 'business':
-        return {
-          designer: 'The Corporate Strategist' as DesignerType,
-          purpose: 'ビジネス・企業プレゼンテーション' as PresentationPurpose,
-          theme: 'corporate' as PresentationTheme,
-          confidence: 0.9
-        };
+  //     case 'business':
+  //       return {
+  //         designer: 'The Corporate Strategist' as DesignerType,
+  //         purpose: 'ビジネス・企業プレゼンテーション' as PresentationPurpose,
+  //         theme: 'corporate' as PresentationTheme,
+  //         confidence: 0.9
+  //       };
 
-      case 'academic':
-        return {
-          designer: 'The Academic Visualizer' as DesignerType,
-          purpose: '教育・学習支援' as PresentationPurpose,
-          theme: 'academic' as PresentationTheme,
-          confidence: 0.85
-        };
+  //     case 'academic':
+  //       return {
+  //         designer: 'The Academic Visualizer' as DesignerType,
+  //         purpose: '教育・学習支援' as PresentationPurpose,
+  //         theme: 'academic' as PresentationTheme,
+  //         confidence: 0.85
+  //       };
 
-      case 'creative':
-        return {
-          designer: 'creative' as DesignerType,
-          purpose: 'クリエイティブ・芸術表現' as PresentationPurpose,
-          theme: 'creative' as PresentationTheme,
-          confidence: 0.9
-        };
+  //     case 'creative':
+  //       return {
+  //         designer: 'creative' as DesignerType,
+  //         purpose: 'クリエイティブ・芸術表現' as PresentationPurpose,
+  //         theme: 'creative' as PresentationTheme,
+  //         confidence: 0.9
+  //       };
 
-      default:
-        return {
-          designer: 'The Academic Visualizer' as DesignerType,
-          purpose: '教育・学習支援' as PresentationPurpose,
-          theme: 'academic' as PresentationTheme,
-          confidence: 0.7
-        };
-    }
-  }
+  //     default:
+  //       return {
+  //         designer: 'The Academic Visualizer' as DesignerType,
+  //         purpose: '教育・学習支援' as PresentationPurpose,
+  //         theme: 'academic' as PresentationTheme,
+  //         confidence: 0.7
+  //       };
+  //   }
+  // }
 
   // =================================================================
   // 🚀 統合AI分析のための補助メソッド
@@ -1160,91 +1202,91 @@ ${config.responseFormat}`;
     }
   }
 
-  /**
-   * フォールバック時の簡素化分析結果作成
-   */
-  private createFallbackSimplifiedAnalysis(topic: string): {
-    selectedStyle: 'simple' | 'education' | 'marketing-oriented' | 'research-presentation-oriented';
-    reason: string;
-    confidence: number;
-    suggestedSlideCount: number;
-    needsPageNumbers: boolean;
-    imageConsistencyLevel: 'high' | 'medium' | 'low';
-  } {
-    const topicLower = topic.toLowerCase();
+  // /**
+  //  * フォールバック時の簡素化分析結果作成
+  //  */
+  // private createFallbackSimplifiedAnalysis(topic: string): {
+  //   selectedStyle: 'simple' | 'education' | 'marketing-oriented' | 'research-presentation-oriented';
+  //   reason: string;
+  //   confidence: number;
+  //   suggestedSlideCount: number;
+  //   needsPageNumbers: boolean;
+  //   imageConsistencyLevel: 'high' | 'medium' | 'low';
+  // } {
+  //   const topicLower = topic.toLowerCase();
     
-    // 最小限のキーワードマッチング（保険処理）
-    let selectedStyle: 'simple' | 'education' | 'marketing-oriented' | 'research-presentation-oriented' = 'simple';
-    let reason = 'デフォルトのシンプルスタイル';
+  //   // 最小限のキーワードマッチング（保険処理）
+  //   let selectedStyle: 'simple' | 'education' | 'marketing-oriented' | 'research-presentation-oriented' = 'simple';
+  //   let reason = 'デフォルトのシンプルスタイル';
     
-    if (this.detectEducationContentFallback(topicLower)) {
-      selectedStyle = 'education';
-      reason = '教育・学習関連キーワードを検出';
-    } else if (this.detectMarketingContentFallback(topicLower)) {
-      selectedStyle = 'marketing-oriented';
-      reason = 'マーケティング・製品関連キーワードを検出';
-    } else if (this.detectResearchContentFallback(topicLower)) {
-      selectedStyle = 'research-presentation-oriented';
-      reason = '研究・分析関連キーワードを検出';
-    }
+  //   if (this.detectEducationContentFallback(topicLower)) {
+  //     selectedStyle = 'education';
+  //     reason = '教育・学習関連キーワードを検出';
+  //   } else if (this.detectMarketingContentFallback(topicLower)) {
+  //     selectedStyle = 'marketing-oriented';
+  //     reason = 'マーケティング・製品関連キーワードを検出';
+  //   } else if (this.detectResearchContentFallback(topicLower)) {
+  //     selectedStyle = 'research-presentation-oriented';
+  //     reason = '研究・分析関連キーワードを検出';
+  //   }
     
-    return {
-      selectedStyle,
-      reason,
-      confidence: 0.6,
-      suggestedSlideCount: 10,
-      needsPageNumbers: selectedStyle === 'research-presentation-oriented' || selectedStyle === 'simple',
-      imageConsistencyLevel: 'medium'
-    };
-  }
+  //   return {
+  //     selectedStyle,
+  //     reason,
+  //     confidence: 0.6,
+  //     suggestedSlideCount: 10,
+  //     needsPageNumbers: selectedStyle === 'research-presentation-oriented' || selectedStyle === 'simple',
+  //     imageConsistencyLevel: 'medium'
+  //   };
+  // }
 
-  /**
-   * フォールバック用の物語コンテンツ検出（保険処理）
-   */
-  private detectStoryContentFallback(topicLower: string): boolean {
-    const storyKeywords = ['物語', '昔話', '童話', '紙芝居', '絵本', '桃太郎', 'かぐや姫'];
-    return storyKeywords.some(keyword => topicLower.includes(keyword));
-  }
+  // // /**
+  //  * フォールバック用の物語コンテンツ検出（保険処理）
+  //  */
+  // private detectStoryContentFallback(topicLower: string): boolean {
+  //   const storyKeywords = ['物語', '昔話', '童話', '紙芝居', '絵本', '桃太郎', 'かぐや姫'];
+  //   return storyKeywords.some(keyword => topicLower.includes(keyword));
+  // }
 
-  /**
-   * フォールバック用のビジネスコンテンツ検出（保険処理）  
-   */
-  private detectBusinessContentFallback(topicLower: string): boolean {
-    const businessKeywords = ['戦略', '営業', 'roi', 'kpi', 'マーケティング', 'ビジネス'];
-    return businessKeywords.some(keyword => topicLower.includes(keyword));
-  }
+  // /**
+  //  * フォールバック用のビジネスコンテンツ検出（保険処理）  
+  //  */
+  // private detectBusinessContentFallback(topicLower: string): boolean {
+  //   const businessKeywords = ['戦略', '営業', 'roi', 'kpi', 'マーケティング', 'ビジネス'];
+  //   return businessKeywords.some(keyword => topicLower.includes(keyword));
+  // }
 
-  /**
-   * フォールバック用のクリエイティブコンテンツ検出（保険処理）
-   */  
-  private detectCreativeContentFallback(topicLower: string): boolean {
-    const creativeKeywords = ['アート', 'デザイン', '創作', 'クリエイティブ', '芸術'];
-    return creativeKeywords.some(keyword => topicLower.includes(keyword));
-  }
+  // /**
+  //  * フォールバック用のクリエイティブコンテンツ検出（保険処理）
+  //  */  
+  // private detectCreativeContentFallback(topicLower: string): boolean {
+  //   const creativeKeywords = ['アート', 'デザイン', '創作', 'クリエイティブ', '芸術'];
+  //   return creativeKeywords.some(keyword => topicLower.includes(keyword));
+  // }
 
-  /**
-   * フォールバック用の教育コンテンツ検出（保険処理）
-   */
-  private detectEducationContentFallback(topicLower: string): boolean {
-    const educationKeywords = ['教育', '学習', '授業', '講義', '子供', 'こども', 'キッズ', '初心者', '入門', 'やり方', '使い方', '方法'];
-    return educationKeywords.some(keyword => topicLower.includes(keyword));
-  }
+  // /**
+  //  * フォールバック用の教育コンテンツ検出（保険処理）
+  //  */
+  // private detectEducationContentFallback(topicLower: string): boolean {
+  //   const educationKeywords = ['教育', '学習', '授業', '講義', '子供', 'こども', 'キッズ', '初心者', '入門', 'やり方', '使い方', '方法'];
+  //   return educationKeywords.some(keyword => topicLower.includes(keyword));
+  // }
 
-  /**
-   * フォールバック用のマーケティングコンテンツ検出（保険処理）
-   */
-  private detectMarketingContentFallback(topicLower: string): boolean {
-    const marketingKeywords = ['マーケティング', '製品', 'プロダクト', '商品', 'サービス', 'ブランド', '販売', '宣伝', 'PR', '広告'];
-    return marketingKeywords.some(keyword => topicLower.includes(keyword));
-  }
+  // /**
+  //  * フォールバック用のマーケティングコンテンツ検出（保険処理）
+  //  */
+  // private detectMarketingContentFallback(topicLower: string): boolean {
+  //   const marketingKeywords = ['マーケティング', '製品', 'プロダクト', '商品', 'サービス', 'ブランド', '販売', '宣伝', 'PR', '広告'];
+  //   return marketingKeywords.some(keyword => topicLower.includes(keyword));
+  // }
 
-  /**
-   * フォールバック用の研究発表コンテンツ検出（保険処理）
-   */
-  private detectResearchContentFallback(topicLower: string): boolean {
-    const researchKeywords = ['研究', '分析', '調査', '論文', 'データ', '統計', '実験', '結果', '考察', '結論', 'PDCA', 'SWOT'];
-    return researchKeywords.some(keyword => topicLower.includes(keyword));
-  }
+  // /**
+  //  * フォールバック用の研究発表コンテンツ検出（保険処理）
+  //  */
+  // private detectResearchContentFallback(topicLower: string): boolean {
+  //   const researchKeywords = ['研究', '分析', '調査', '論文', 'データ', '統計', '実験', '結果', '考察', '結論', 'PDCA', 'SWOT'];
+  //   return researchKeywords.some(keyword => topicLower.includes(keyword));
+  // }
 
   /**
    * AIサービス取得
@@ -1266,59 +1308,59 @@ ${config.responseFormat}`;
    * 代替：AI分析のみを使用
    */
 
-  /**
-   * 推定理由の生成
-   */
-  private generateReasoning(
-    topic: string, 
-    match: any, 
-    contentType: string, 
-    emotionalTone: string
-  ): string {
-    return `トピック「${topic}」を分析した結果:
-・コンテンツタイプ: ${contentType}
-・感情トーン: ${emotionalTone}  
-・最適デザイナー: ${match.suggestedDesigner}
-・推奨用途: ${match.suggestedPurpose}
-・推奨テーマ: ${match.suggestedTheme}
-・信頼度: ${Math.round(match.confidence * 100)}%`;
-  }
+//   /**
+//    * 推定理由の生成
+//    */
+//   private generateReasoning(
+//     topic: string, 
+//     match: any, 
+//     contentType: string, 
+//     emotionalTone: string
+//   ): string {
+//     return `トピック「${topic}」を分析した結果:
+// ・コンテンツタイプ: ${contentType}
+// ・感情トーン: ${emotionalTone}  
+// ・最適デザイナー: ${match.suggestedDesigner}
+// ・推奨用途: ${match.suggestedPurpose}
+// ・推奨テーマ: ${match.suggestedTheme}
+// ・信頼度: ${Math.round(match.confidence * 100)}%`;
+//   }
 
-  /**
-   * 🧠 AI分析結果から適切な感情トーンをマッピング
-   * キーワードマッチングを廃止し、コンテンツタイプとデザイナーから論理的に導出
-   */
-  private mapContentTypeToEmotionalTone(contentType: ContextAnalysis['contentType'], suggestedDesigner: DesignerType): ContextAnalysis['emotionalTone'] {
-    console.log('🎭 Mapping emotional tone from AI analysis:', { contentType, suggestedDesigner });
+  // /**
+  //  * 🧠 AI分析結果から適切な感情トーンをマッピング
+  //  * キーワードマッチングを廃止し、コンテンツタイプとデザイナーから論理的に導出
+  //  */
+  // private mapContentTypeToEmotionalTone(contentType: ContextAnalysis['contentType'], suggestedDesigner: DesignerType): ContextAnalysis['emotionalTone'] {
+  //   console.log('🎭 Mapping emotional tone from AI analysis:', { contentType, suggestedDesigner });
     
-    // コンテンツタイプベースの基本マッピング
-    switch (contentType) {
-      case 'story':
-        console.log('📚 Story content → emotional tone');
-        return 'emotional'; // 物語は感情的
+  //   // コンテンツタイプベースの基本マッピング
+  //   switch (contentType) {
+  //     case 'story':
+  //       console.log('📚 Story content → emotional tone');
+  //       return 'emotional'; // 物語は感情的
         
-      case 'technical':
-        console.log('💻 Technical content → logical tone');
-        return 'logical'; // 技術コンテンツは論理的
+  //     case 'technical':
+  //       console.log('💻 Technical content → logical tone');
+  //       return 'logical'; // 技術コンテンツは論理的
         
-      case 'business':
-        const businessTone = suggestedDesigner === 'The Corporate Strategist' ? 'professional' : 'inspiring';
-        console.log(`💼 Business content → ${businessTone} tone`);
-        return businessTone;
+  //     case 'business':
+  //       const businessTone = suggestedDesigner === 'The Corporate Strategist' ? 'professional' : 'inspiring';
+  //       console.log(`💼 Business content → ${businessTone} tone`);
+  //       return businessTone;
         
-      case 'academic':
-        console.log('🎓 Academic content → professional tone');
-        return 'professional'; // 学術は専門的
+  //     case 'academic':
+  //       console.log('🎓 Academic content → professional tone');
+  //       return 'professional'; // 学術は専門的
         
-      case 'creative':
-        console.log('🎨 Creative content → inspiring tone');
-        return 'inspiring'; // 創作は刺激的
+  //     case 'creative':
+  //       console.log('🎨 Creative content → inspiring tone');
+  //       return 'inspiring'; // 創作は刺激的
         
-      default:
-        console.log('🔧 Default content → professional tone');
-        return 'professional'; // デフォルト
-    }
-  }
+  //     default:
+  //       console.log('🔧 Default content → professional tone');
+  //       return 'professional'; // デフォルト
+  //   }
+  // }
 }
 
 // シングルトンインスタンス

@@ -162,38 +162,3 @@ export async function processPresentationTopic(userInputTopic: string): Promise<
   };
 }
 
-// フォールバック関数
-function buildFallbackExpansionPrompt(topic: string): string {
-  return `以下のトピックを、ユーザーの元の意図を正確に保持したまま、スライド作成に適した内容に展開してください。
-
-入力トピック: "${topic}"
-
-展開の原則:
-- ユーザーが求めている内容の本質を変えない
-- 物語・創作系の場合は、ストーリーの魅力を重視
-- 教育・ビジネス系の場合のみ、学習効果や実用性を考慮
-- 元のトーンと方向性を保持
-
-簡潔で自然な展開内容（150-300文字程度）:`;
-}
-
-function buildFallbackStructuringPrompt(topic: string): string {
-  return `以下の文章を分析し、MECE原則（漏れなく重複なく）に基づいて構造化してください。
-
-入力文章:
-"${topic}"
-
-構造化の指針:
-1. 主要テーマを特定
-2. 内容を論理的カテゴリに分類
-3. 重複を排除し、漏れをチェック
-4. プレゼンテーション向けの論理的順序で整理
-5. 各要素が相互排他的（Mutually Exclusive）かつ網羅的（Collectively Exhaustive）
-
-出力形式:
-- 明確な構造で整理
-- スライド作成に適した内容
-- 論理的な流れを持つ構成
-
-構造化された内容:`;
-}

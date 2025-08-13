@@ -271,10 +271,7 @@ export const getDesignerLayoutPrompt = (designer: DesignerType, purpose: Present
   
   if (!strategy) {
     console.error('No strategy found for designer:', actualDesigner);
-    // Fallback to Corporate Strategist
-    const fallbackStrategy = DESIGNER_STRATEGIES['The Corporate Strategist'];
-    const fallbackAdaptation = fallbackStrategy.purposeAdaptation[purpose] || fallbackStrategy.purposeAdaptation['business_presentation'];
-    return `フォールバック戦略: ${fallbackStrategy.name} - "${fallbackStrategy.philosophy}"`;
+    throw new Error(`指定されたデザイナー「${actualDesigner}」の戦略が見つかりません。有効なデザイナーを選択してください。`);
   }
   
   // Map new purpose to legacy purpose used in DESIGNER_STRATEGIES
@@ -283,15 +280,7 @@ export const getDesignerLayoutPrompt = (designer: DesignerType, purpose: Present
   
   if (!adaptation) {
     console.error('No adaptation found for legacy purpose:', legacyPurpose, 'from purpose:', purpose, 'Available purposes:', Object.keys(strategy.purposeAdaptation));
-    // Fallback to default purpose
-    const fallbackAdaptation = strategy.purposeAdaptation['business_presentation'] || strategy.purposeAdaptation['auto'];
-    if (fallbackAdaptation) {
-      return `フォールバック用途適用: ${strategy.name} - "${strategy.philosophy}"
-基本原則: ${strategy.layoutPrinciples.join(', ')}
-フォールバック配置: ${fallbackAdaptation.preferredLayouts.join(', ')}`;
-    } else {
-      return `基本戦略: ${strategy.name} - "${strategy.philosophy}"`;
-    }
+    throw new Error(`デザイナー「${strategy.name}」は用途「${purpose}」に対応していません。別の用途を選択してください。`);
   }
   
   const prompt = `

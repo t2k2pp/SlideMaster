@@ -30,26 +30,22 @@ export class EducationStyleStrategy extends BaseDesignerStrategy {
   }
 
   buildImagePrompt(slideContent: string, imageContext: any): string {
-    // 教育向け：AI判断による適切な学習支援画像
-    const learningContext = this.analyzeLearningContent(slideContent);
+    // コンテンツ（トピック）を尊重し、スタイルはタッチのみを指定
+    const topic = imageContext?.topic || slideContent;
     
     // 画像一貫性設定を考慮
     const consistencyLevel = imageContext?.imageConsistencyLevel || 'medium';
     const consistencyInstruction = this.getConsistencyInstruction(consistencyLevel);
     
-    return `Create an educational image that helps students understand this content:
-
-Content: ${slideContent}
-
-Educational context: ${learningContext.type}
-Learning objective: ${learningContext.objective}
-Appropriate visual style: ${learningContext.visualStyle}
+    // contextIntelligenceResourcesからスタイル指示を取得し、{topic}を置換
+    const stylePrompt = contextIntelligenceResources.styleStrategies.education.imagePrompt
+      .replace(/{topic}/g, topic);
+    
+    return `${stylePrompt}
 
 ${consistencyInstruction}
 
-${contextIntelligenceResources.styleStrategies.education.imagePrompt}
-
-Make it engaging and age-appropriate for the learning context.`;
+Create an engaging, educational image that accurately represents the topic while applying only the specified visual touch style.`;
   }
 
   getLayoutStrategy() {
@@ -60,37 +56,8 @@ Make it engaging and age-appropriate for the learning context.`;
     };
   }
 
-  private analyzeLearningContent(content: string): {
-    type: string;
-    objective: string;
-    visualStyle: string;
-  } {
-    const lowerContent = content.toLowerCase();
-    
-    if (lowerContent.includes('子ども') || lowerContent.includes('こども') || 
-        lowerContent.includes('小学') || lowerContent.includes('幼児')) {
-      return {
-        type: 'children-education',
-        objective: 'make complex topics simple and fun for children',
-        visualStyle: 'colorful, cartoon-like, friendly characters'
-      };
-    }
-    
-    if (lowerContent.includes('手順') || lowerContent.includes('ステップ') || 
-        lowerContent.includes('方法') || lowerContent.includes('やり方')) {
-      return {
-        type: 'step-by-step-learning',
-        objective: 'show clear steps or processes',
-        visualStyle: 'clear diagrams, numbered steps, process flow'
-      };
-    }
-    
-    return {
-      type: 'general-education',
-      objective: 'support understanding with clear visuals',
-      visualStyle: 'educational illustrations, clear and simple'
-    };
-  }
+  // 削除：コンテンツ分析による固定的なスタイル指示は廃止
+  // スタイルはタッチのみを指定し、コンテンツ（トピック）は画像生成で尊重される
 
   /**
    * 画像一貫性レベルに応じた指示を生成

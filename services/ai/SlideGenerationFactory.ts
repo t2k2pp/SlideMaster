@@ -94,7 +94,7 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
         rawContent = await designerStrategy.generateSlidesWithMarpApproach(intelligentRequest);
       } else {
         console.log('📝 Using traditional single-phase generation approach');
-        // 従来方式（フォールバック）
+        // 従来方式（シングルフェーズ生成）
         const enhancedPrompt = designerStrategy.buildContentPrompt(intelligentRequest);
         rawContent = await this.generateRawContent(enhancedPrompt, intelligentRequest);
       }
@@ -165,6 +165,15 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
     
     console.log('🔍 Intelligent Context Analysis:', { purpose, theme, slideCount });
 
+    // 🎯 selectedStyleベースの選択（新しい4スタイルシステム）
+    if (request.selectedStyle) {
+      console.log(`🎨 Style-based selection: ${request.selectedStyle}`);
+      const strategy = this.designerStrategies.get(request.selectedStyle);
+      if (strategy) {
+        return strategy;
+      }
+    }
+
     // 🎭 教育スタイルの検出
     if (request.selectedDesigner === 'education') {
       console.log('📚 Education style detected');
@@ -183,12 +192,14 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
       return this.designerStrategies.get('research-presentation-oriented')!;
     }
     
+    // 🚀 シンプルスタイルの検出
+    if (request.selectedDesigner === 'simple') {
+      console.log('🎯 Simple style detected');
+      return this.designerStrategies.get('simple')!;
+    }
     
-
-    
-    
-    // 🎯 デフォルト: simpleスタイル
-    console.log('🎯 Default fallback → Simple Style');
+    // 🎯 デフォルトはsimpleスタイル
+    console.log('🎯 Using default simple style');
     return this.designerStrategies.get('simple')!;
   }
 
@@ -344,13 +355,14 @@ export class SlideGenerationFactory implements ISlideGenerationFactory {
           const slide = parsed.slides[i];
           const slideContent = this.extractSlideTextContent(slide);
           
-          // 🎯 Style-Enhanced Image Prompt Generation
+          // 🎯 コンテンツベースの画像プロンプト生成
           const styleEnhancedImageContext = {
             slideIndex: i,
             totalSlides: parsed.slides.length,
             styleAnalysis: imageContextAnalysis,
             selectedStyle: imageContextAnalysis.selectedStyle,
-            originalTopic: request.topic
+            topic: request.topic, // コンテンツの主題を明確に渡す
+            imageConsistencyLevel: request.imageConsistencyLevel || 'medium'
           };
           
           // デザイナー戦略 + スタイル情報による画像プロンプト
@@ -950,38 +962,38 @@ Note: No text overlays, website URLs, or icons8.com imagery.`;
    * 新しい4スタイル用のスタイル→デザイナー設定マッピング
    */
   private mapStyleToDesignerSettings(selectedStyle: 'simple' | 'education' | 'marketing-oriented' | 'research-presentation-oriented'): {
-    designer: DesignerType;
+    designer: string;
     theme: string;
     purpose: string;
   } {
     switch (selectedStyle) {
       case 'simple':
         return {
-          designer: 'logical',
+          designer: 'simple',
           theme: 'minimalist',
           purpose: 'business_presentation'
         };
       case 'education':
         return {
-          designer: 'The Academic Visualizer', 
-          theme: 'academic',
-          purpose: 'educational_content'
+          designer: 'education', 
+          theme: 'children_bright',
+          purpose: 'storytelling'
         };
       case 'marketing-oriented':
         return {
-          designer: 'The Vivid Creator',
+          designer: 'marketing-oriented',
           theme: 'creative',
           purpose: 'marketing_pitch'
         };
       case 'research-presentation-oriented':
         return {
-          designer: 'The Academic Visualizer',
+          designer: 'research-presentation-oriented',
           theme: 'academic',
           purpose: 'academic_research'
         };
       default:
         return {
-          designer: 'The Academic Visualizer',
+          designer: 'simple',
           theme: 'academic',
           purpose: 'educational_content'
         };

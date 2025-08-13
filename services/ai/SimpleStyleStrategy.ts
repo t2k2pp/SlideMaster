@@ -30,26 +30,22 @@ export class SimpleStyleStrategy extends BaseDesignerStrategy {
   }
 
   buildImagePrompt(slideContent: string, imageContext: any): string {
-    // AIに判断させる方式：スライド内容から最適な画像スタイルを決定
-    const contentAnalysis = this.analyzeSlideContent(slideContent);
+    // コンテンツ（トピック）を尊重し、スタイルはタッチのみを指定
+    const topic = imageContext?.topic || slideContent;
     
     // 画像一貫性設定を考慮
     const consistencyLevel = imageContext?.imageConsistencyLevel || 'medium';
     const consistencyInstruction = this.getConsistencyInstruction(consistencyLevel);
     
-    return `Generate an image that best represents the following content. 
-Use your judgment to determine the most appropriate visual style based on the content context:
-
-Content: ${slideContent}
-
-Analysis context: ${contentAnalysis.context}
-Suggested style: ${contentAnalysis.suggestedStyle}
-Visual elements: ${contentAnalysis.visualElements.join(', ')}
+    // contextIntelligenceResourcesからスタイル指示を取得し、{topic}を置換
+    const stylePrompt = contextIntelligenceResources.styleStrategies.simple.imagePrompt
+      .replace(/{topic}/g, topic);
+    
+    return `${stylePrompt}
 
 ${consistencyInstruction}
 
-Create a professional, clean image that supports the content without overwhelming it.
-Style should be: ${contextIntelligenceResources.styleStrategies.simple.imagePrompt}`;
+Create a professional, clean image that accurately represents the topic while applying only the specified visual touch style.`;
   }
 
   getLayoutStrategy() {
@@ -77,53 +73,8 @@ Style should be: ${contextIntelligenceResources.styleStrategies.simple.imageProm
   // プライベートメソッド
   // =================================================================
 
-  /**
-   * スライド内容を分析してAI画像生成の方向性を決定
-   */
-  private analyzeSlideContent(content: string): {
-    context: string;
-    suggestedStyle: string;
-    visualElements: string[];
-  } {
-    const lowerContent = content.toLowerCase();
-    
-    // データ・統計関連
-    if (lowerContent.includes('データ') || lowerContent.includes('統計') || 
-        lowerContent.includes('グラフ') || lowerContent.includes('%')) {
-      return {
-        context: 'data-visualization',
-        suggestedStyle: 'clean charts, graphs, or data visualization',
-        visualElements: ['charts', 'graphs', 'infographics', 'data tables']
-      };
-    }
-    
-    // ビジネス・戦略関連
-    if (lowerContent.includes('戦略') || lowerContent.includes('計画') || 
-        lowerContent.includes('ビジネス') || lowerContent.includes('経営')) {
-      return {
-        context: 'business-strategy',
-        suggestedStyle: 'professional business imagery',
-        visualElements: ['flowcharts', 'organizational diagrams', 'timeline', 'process flow']
-      };
-    }
-    
-    // 技術・システム関連
-    if (lowerContent.includes('技術') || lowerContent.includes('システム') || 
-        lowerContent.includes('プロセス') || lowerContent.includes('手法')) {
-      return {
-        context: 'technical-process',
-        suggestedStyle: 'technical diagrams or process illustrations',
-        visualElements: ['technical diagrams', 'process flow', 'system architecture', 'workflow']
-      };
-    }
-    
-    // 一般的なコンテンツ
-    return {
-      context: 'general-content',
-      suggestedStyle: 'clean, professional illustration that supports the content',
-      visualElements: ['abstract concepts', 'professional imagery', 'clean illustrations']
-    };
-  }
+  // 削除：コンテンツ分析による固定的なスタイル指示は廃止
+  // スタイルはタッチのみを指定し、コンテンツ（トピック）は画像生成で尊重される
 
   private applySimpleColors(content: string): string {
     try {

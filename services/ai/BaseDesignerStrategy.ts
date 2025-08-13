@@ -172,14 +172,9 @@ export abstract class BaseDesignerStrategy implements DesignerStrategy {
         }
       }
       
-      // フォールバック: 従来の一段階生成
-      console.log('🔄 Falling back to traditional single-phase generation...');
-      const fallbackPrompt = this.buildContentPrompt(request);
-      const aiService = getTextAIService();
-      
-      return await aiService.generateText(fallbackPrompt, {
-        temperature: 0.7
-      });
+      // すべてのリトライに失敗した場合はエラー
+      console.error('❌ All generation approaches failed');
+      throw new Error('スライド生成に失敗しました。AIサービスの設定や接続を確認してください。');
     }
   }
 

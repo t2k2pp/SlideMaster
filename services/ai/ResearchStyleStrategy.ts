@@ -30,26 +30,22 @@ export class ResearchStyleStrategy extends BaseDesignerStrategy {
   }
 
   buildImagePrompt(slideContent: string, imageContext: any): string {
-    // 研究発表向け：AI判断による論理的支援画像
-    const researchContext = this.analyzeResearchContent(slideContent);
+    // コンテンツ（トピック）を尊重し、スタイルはタッチのみを指定
+    const topic = imageContext?.topic || slideContent;
     
     // 画像一貫性設定を考慮
     const consistencyLevel = imageContext?.imageConsistencyLevel || 'medium';
     const consistencyInstruction = this.getConsistencyInstruction(consistencyLevel);
     
-    return `Create a research-appropriate visual that supports academic understanding:
-
-Content: ${slideContent}
-
-Research context: ${researchContext.category}
-Academic focus: ${researchContext.focus}
-Visualization type: ${researchContext.visualType}
+    // contextIntelligenceResourcesからスタイル指示を取得し、{topic}を置換
+    const stylePrompt = contextIntelligenceResources.styleStrategies.researchPresentationOriented.imagePrompt
+      .replace(/{topic}/g, topic);
+    
+    return `${stylePrompt}
 
 ${consistencyInstruction}
 
-${contextIntelligenceResources.styleStrategies.researchPresentationOriented.imagePrompt}
-
-Prioritize clarity, accuracy, and academic appropriateness over visual appeal.`;
+Create a clear, accurate image that supports academic understanding while accurately representing the topic and applying only the specified visual touch style.`;
   }
 
   getLayoutStrategy() {
@@ -60,46 +56,8 @@ Prioritize clarity, accuracy, and academic appropriateness over visual appeal.`;
     };
   }
 
-  private analyzeResearchContent(content: string): {
-    category: string;
-    focus: string;
-    visualType: string;
-  } {
-    const lowerContent = content.toLowerCase();
-    
-    if (lowerContent.includes('データ') || lowerContent.includes('統計') || 
-        lowerContent.includes('結果') || lowerContent.includes('分析')) {
-      return {
-        category: 'data-analysis',
-        focus: 'empirical evidence and statistical findings',
-        visualType: 'charts, graphs, statistical visualizations'
-      };
-    }
-    
-    if (lowerContent.includes('理論') || lowerContent.includes('モデル') || 
-        lowerContent.includes('フレームワーク') || lowerContent.includes('概念')) {
-      return {
-        category: 'theoretical-framework',
-        focus: 'conceptual models and theoretical structures',
-        visualType: 'conceptual diagrams, framework illustrations'
-      };
-    }
-    
-    if (lowerContent.includes('手法') || lowerContent.includes('方法') || 
-        lowerContent.includes('プロセス') || lowerContent.includes('アプローチ')) {
-      return {
-        category: 'methodology',
-        focus: 'research methods and processes',
-        visualType: 'process flow, methodology diagrams'
-      };
-    }
-    
-    return {
-      category: 'general-research',
-      focus: 'academic knowledge communication',
-      visualType: 'academic-style illustrations, clean diagrams'
-    };
-  }
+  // 削除：コンテンツ分析による固定的なスタイル指示は廃止
+  // スタイルはタッチのみを指定し、コンテンツ（トピック）は画像生成で尊重される
 
   /**
    * 画像一貫性レベルに応じた指示を生成

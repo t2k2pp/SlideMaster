@@ -30,26 +30,22 @@ export class MarketingStyleStrategy extends BaseDesignerStrategy {
   }
 
   buildImagePrompt(slideContent: string, imageContext: any): string {
-    // マーケティング向け：AI判断による魅力的な訴求画像
-    const marketingContext = this.analyzeMarketingContent(slideContent);
+    // コンテンツ（トピック）を尊重し、スタイルはタッチのみを指定
+    const topic = imageContext?.topic || slideContent;
     
     // 画像一貫性設定を考慮
     const consistencyLevel = imageContext?.imageConsistencyLevel || 'medium';
     const consistencyInstruction = this.getConsistencyInstruction(consistencyLevel);
     
-    return `Create a compelling marketing image that captures attention and communicates value:
-
-Content: ${slideContent}
-
-Marketing context: ${marketingContext.focus}
-Target emotion: ${marketingContext.emotion}
-Visual approach: ${marketingContext.approach}
+    // contextIntelligenceResourcesからスタイル指示を取得し、{topic}を置換
+    const stylePrompt = contextIntelligenceResources.styleStrategies.marketingOriented.imagePrompt
+      .replace(/{topic}/g, topic);
+    
+    return `${stylePrompt}
 
 ${consistencyInstruction}
 
-${contextIntelligenceResources.styleStrategies.marketingOriented.imagePrompt}
-
-Make it visually striking and persuasive while maintaining professionalism.`;
+Create a visually striking and engaging image that accurately represents the topic while applying only the specified visual touch style.`;
   }
 
   getLayoutStrategy() {
@@ -60,37 +56,8 @@ Make it visually striking and persuasive while maintaining professionalism.`;
     };
   }
 
-  private analyzeMarketingContent(content: string): {
-    focus: string;
-    emotion: string;
-    approach: string;
-  } {
-    const lowerContent = content.toLowerCase();
-    
-    if (lowerContent.includes('製品') || lowerContent.includes('商品') || 
-        lowerContent.includes('サービス') || lowerContent.includes('ブランド')) {
-      return {
-        focus: 'product-showcase',
-        emotion: 'desire and trust',
-        approach: 'product photography style, premium feel'
-      };
-    }
-    
-    if (lowerContent.includes('効果') || lowerContent.includes('メリット') || 
-        lowerContent.includes('利益') || lowerContent.includes('価値')) {
-      return {
-        focus: 'benefits-highlighting',
-        emotion: 'excitement and satisfaction',
-        approach: 'before/after concepts, success imagery'
-      };
-    }
-    
-    return {
-      focus: 'brand-communication',
-      emotion: 'engagement and interest',
-      approach: 'lifestyle imagery, aspirational visuals'
-    };
-  }
+  // 削除：コンテンツ分析による固定的なスタイル指示は廃止
+  // スタイルはタッチのみを指定し、コンテンツ（トピック）は画像生成で尊重される
 
   /**
    * 画像一貫性レベルに応じた指示を生成

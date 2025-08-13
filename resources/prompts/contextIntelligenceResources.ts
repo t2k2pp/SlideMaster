@@ -48,7 +48,6 @@ export interface MarpLayoutGeneration {
 export interface MarpContentGeneration {
   titleGenerationPrompt: string;
   marpPrompt: string;
-  storyMarpPrompt: string;
 }
 
 export interface TopicProcessing {
@@ -149,16 +148,16 @@ export const contextIntelligenceResources: ContextIntelligenceResources = {
       },
       education: {
         name: "education",
-        description: "文字サイズを大きくし、イラストやアイコンを多めに配置する教育・学習向けスタイル",
+        description: "読みやすく親しみやすいスタイル、物語や子供向けコンテンツに適したビジュアル重視のスタイル",
         characteristics: [
           "大きく読みやすい文字サイズ",
           "イラストやアイコンを多用",
-          "図解やステップ形式のレイアウト",
-          "専門的なグラフより分かりやすいビジュアル",
-          "子供向けコンテンツでは親しみやすい画像も許可"
+          "ストーリーや物語の表現に適している",
+          "親しみやすく温かい色合い",
+          "子供から大人まで理解しやすいビジュアル"
         ],
-        imageStyle: "分かりやすいイラスト重視、図解・ステップ説明、子供向けなら「childish imagery OK」",
-        layoutPriority: "視認性と理解しやすさを重視"
+        imageStyle: "絵本風、アニメ風、親しみやすいイラスト重視",
+        layoutPriority: "視認性と親しみやすさを重視"
       },
       marketingOriented: {
         name: "marketing-oriented", 
@@ -223,12 +222,12 @@ export const contextIntelligenceResources: ContextIntelligenceResources = {
   marpLayoutGeneration: {
     singleSlideLayoutPrompt: `以下の単一Marpスライドを、視覚的に魅力的なJSONレイアウトに変換してください。
 
-**デザイナー:** {designer}
+**プレゼンテーションスタイル:** {presentationStyle}
 **テーマ:** {theme}
 **アスペクト比:** {aspectRatio}
 
 **レイアウト指針:**
-{designerLayoutGuidance}
+{styleLayoutGuidance}
 
 **色彩設計:**
 {themeColors}
@@ -292,7 +291,7 @@ export const contextIntelligenceResources: ContextIntelligenceResources = {
 - 内容: {topic}
 - 用途: {purpose}
 - テーマ: {theme}
-- デザイナー: {designer}
+- プレゼンテーションスタイル: {presentationStyle}
 - スライド数: {slideCount}枚
 
 **タイトル要件（重要）:**
@@ -307,13 +306,11 @@ export const contextIntelligenceResources: ContextIntelligenceResources = {
 - 25文字を超える場合は必ず短縮する
 
 **出力例:**
-ロジカルシンキング研修（15文字）
-データ分析入門講座（10文字）`,
+データ分析入門（7文字）
+顧客管理システムの提案（11文字）
+新・桃太郎（6文字）`,
 
-    marpPrompt: `「{topic}」について{slideCount}枚のプレゼンテーション資料を作成してください。
-タイトルは"{generatedTitle}"を使用してください。
-
-あなたの専門知識を活用して、最も有用で正確な内容を提供してください。
+    marpPrompt: `「タイトルは"{generatedTitle}"というタイトルで、{topic}」について{slideCount}枚のプレゼンテーション資料を作成してください。
 
 Marp形式で出力：
 
@@ -337,32 +334,6 @@ theme: {theme}
 
 {customInstructions}`,
 
-    storyMarpPrompt: `「{topic}」について{slideCount}枚のスライドを作成してください。
-タイトルは"{generatedTitle}"を使用してください。
-
-Marp形式で出力：
-
----
-title: {generatedTitle}
-description: {generatedTitle}
-theme: storytelling
----
-
-# {generatedTitle}
-## サブタイトル
-
-{imageInstruction}
-**ノート:** スピーカーノート
-
----
-
-# 2枚目のスライド
-内容...
-
-{imageInstruction}
-**ノート:** スピーカーノート
-
-以降{slideCount}枚まで続ける。`
   },
 
   // TopicProcessor プロンプト
@@ -403,7 +374,6 @@ theme: storytelling
       contentPrompt: `トピック: {topic}
 
 【Simple Style - シンプルで洗練された構成】
-あなたの専門知識を最大限活用し、「{topic}」について最も有用で正確な内容を提供してください。
 
 スタイル指針:
 - スタイリッシュでクリーンなデザイン
@@ -416,7 +386,7 @@ theme: storytelling
 
 {jsonStructureInstructions}`,
 
-      imagePrompt: "プロフェッショナル、クリーンなビジュアル、図表・グラフ・チャート重視、{topic}に関連する高品質でビジネス適用可能な画像",
+      imagePrompt: "シンプルな線画タッチ、日本のイラストタッチ、クリーンで洗練されたスタイル，{topic}の内容をシンプルに表現",
       
       layoutGuidance: "構造性重視のレイアウト、情報の階層化、余白を活用したクリーンなデザイン"
     },
@@ -424,22 +394,23 @@ theme: storytelling
     education: {
       contentPrompt: `トピック: {topic}
 
-【Education Style - 教育・学習向け構成】
-あなたの専門知識を最大限活用し、「{topic}」について最も分かりやすく教育的な内容を提供してください。
+【Education Style - 読みやすく分かりやすいスタイル】
 
 スタイル指針:
 - 大きく読みやすい文字サイズ
-- イラストやアイコンを多用した分かりやすい構成
+- イラストやアイコンを多用した分かりやすい構成  
 - 図解やステップ形式のレイアウト
 - 専門的なグラフより直感的に理解しやすいビジュアル
 - 視認性と理解しやすさを重視
+
+重要: トピックの内容をそのまま表現し、教育分析や価値解釈は行わない
 
 {slideCountInstructions}。
 {imageInstructions}
 
 {jsonStructureInstructions}`,
 
-      imagePrompt: "分かりやすいイラスト重視、図解・ステップ説明、{topic}の教育に適した親しみやすい画像。子供向けコンテンツの場合は childish imagery OK",
+      imagePrompt: "視認性と理解しやすさを最優先に、コンテンツの性質に応じて最適な表現方法を選択してください：物語・ストーリー系は情景やキャラクターの挿絵風、説明・解説系は図解・構造図・関連図など理解を助ける視覚表現。挿絵をする場合、小学校低学年以下を対象とする場合は絵本のタッチ、それ以上の場合は日本のアニメ風のタッチや、イラストを重視で表現。{topic}の内容を適切に表現してください。",
       
       layoutGuidance: "視認性重視、大きなフォントサイズ、イラスト・アイコンを多用した分かりやすいレイアウト"
     },
@@ -448,7 +419,6 @@ theme: storytelling
       contentPrompt: `トピック: {topic}
 
 【Marketing-Oriented Style - ビジュアル重視構成】
-あなたの専門知識を最大限活用し、「{topic}」について最も魅力的でインパクトのある内容を提供してください。
 
 スタイル指針:
 - ビジュアルインパクトを重視した構成
@@ -462,7 +432,7 @@ theme: storytelling
 
 {jsonStructureInstructions}`,
 
-      imagePrompt: "商品写真風、魅力的な製品ビジュアル、{topic}に関連するマーケティング素材として使用可能な高品質画像",
+      imagePrompt: "カラフルでビジュアルインパクトのあるタッチ、目を引く鮮やかな色使い、アーティスティックで魅力的なスタイル，{topic}の内容をビジュアル重視で表現",
       
       layoutGuidance: "視覚的インパクト重視、大きな画像エリア、魅力的な色使いとレイアウト"
     },
@@ -470,22 +440,21 @@ theme: storytelling
     researchPresentationOriented: {
       contentPrompt: `トピック: {topic}
 
-【Research Presentation-Oriented Style - 研究発表向け構成】  
-あなたの専門知識を最大限活用し、「{topic}」について最も論理的で研究発表に適した内容を提供してください。
+【Research Presentation-Oriented Style - 論理的で構造化されたスタイル】  
 
 スタイル指針:
-- 論理的な研究発表構成（イントロダクション→方法→結果→考察→結論）
-- 図表や数式の美しい配置
-- PDCAサイクル、SWOT図などのビジネスフレームワーク対応
+- 論理的な表現・構成
 - インフォグラフィックス的な効果的情報表示
 - 論理性と構造化された情報表示を重視
+
+重要: トピックの内容をそのまま表現し、研究分析や学術的解釈は行わない
 
 {slideCountInstructions}。  
 {imageInstructions}
 
 {jsonStructureInstructions}`,
 
-      imagePrompt: "インフォグラフィック、論理補助図表、PDCA・SWOT等フレームワーク図、{topic}の論理的説明を補助する構造化されたビジュアル",
+      imagePrompt: "論理性と構造化を重視し、コンテンツの性質に応じて最適な表現方法を選択してください：データ・分析系は図表・グラフ・インフォグラフィック、概念・理論系は構造図・フレームワーク図、物語・事例系は論理的な流れを示す視覚表現。機械的・デジタル感のあるタッチ、シャープで精密なラインで{topic}の内容を適切に表現してください。",
       
       layoutGuidance: "論理性重視、構造化された情報配置、フレームワーク図表を活用したレイアウト"
     },
@@ -517,13 +486,11 @@ theme: storytelling
       imageInstructions: `画像について: {frequencyText}適切な{styleInstruction}画像を配置してください。画像は内容と一致し、スライドの理解を助けるものにしてください。`,
 
       jsonStructureInstructions: `
-結果は**Minified JSON形式（スペース・改行・インデントなし）**で以下の構造で出力してください。トークン数節約のため、整形は不要です：
+トークン節約のため結果は**Minified JSON形式（スペース・改行・インデントなし）**で以下の構造で出力してください。整形は不要です：
 
 **重要：コンテンツフォーマット制限**
-- contentフィールドでは、HTMLタグを一切使用しないでください
-- <div>、<span>、<br>、style属性などは禁止です
-- 代わりにMarkdown記法を使用してください（**太字**、### 見出し、- リストなど）
-- プレーンテキストまたはMarkdown記法のみ使用可能
+- contentフィールドでは、プレーンテキストまたはMarkdown記法を使用してください（**太字**、### 見出し、- リストなど）
+- <div>、<span>、<br>、style属性などHTMLタグを一切使用しないでください
 
 {
   "title": "プレゼンテーションタイトル",
@@ -609,7 +576,7 @@ theme: storytelling
   ]
 }
 
-各スライドは情報が豊富で、視覚的に魅力的になるように作成してください。`,
+各スライドは魅力ある視覚になるように作成してください。`,
 
     systemPrompt: "あなたは優秀なプレゼンテーションデザイナーです。与えられたトピックについて、構造化された分かりやすいスライドを作成してください。"
   },

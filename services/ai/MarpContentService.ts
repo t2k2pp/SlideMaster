@@ -11,7 +11,7 @@ export interface MarpContentOptions {
   slideCount?: number;
   purpose?: string;
   theme?: string;
-  designer?: string;
+  presentationStyle?: string;
   includeImages?: boolean;
   customInstructions?: string;
 }
@@ -31,7 +31,7 @@ export interface MarpPresentation {
     slideCount: number;
     theme: string;
     purpose: string;
-    designer: string;
+    presentationStyle: string;
   };
 }
 
@@ -43,7 +43,7 @@ export class MarpContentService {
    * プレゼンテーションタイトルを生成
    */
   buildTitleGenerationPrompt(options: MarpContentOptions): string {
-    const { topic, purpose, theme, designer, slideCount } = options;
+    const { topic, purpose, theme, presentationStyle, slideCount } = options;
     
     let promptTemplate = contextIntelligenceResources.marpContentGeneration.titleGenerationPrompt;
     
@@ -51,7 +51,7 @@ export class MarpContentService {
       .replace(/{topic}/g, topic)
       .replace(/{purpose}/g, purpose)
       .replace(/{theme}/g, theme)
-      .replace(/{designer}/g, designer)
+      .replace(/{presentationStyle}/g, presentationStyle)
       .replace(/{slideCount}/g, slideCount.toString());
   }
 
@@ -65,18 +65,12 @@ export class MarpContentService {
       slideCount = 5,
       purpose = 'informative',
       theme = 'professional',
-      designer = 'The Academic Visualizer',
+      presentationStyle = 'simple',
       includeImages = true,
       customInstructions = ''
     } = options;
 
-    // 物語・創作系の判定（統合分析結果またはフォールバック）
-    const isStoryContent = this.determineStoryContent(topic, purpose, theme, options);
-    
-    if (isStoryContent) {
-      // 物語・創作系の場合は子供向けの純粋な物語として作成
-      return this.buildStoryMarpPrompt(topic, slideCount, generatedTitle, includeImages);
-    }
+    // 全てのコンテンツを統一されたmarpPromptで処理
 
     const imageInstruction = includeImages ? '**画像説明:** [関連する画像の説明]' : '';
     
@@ -101,7 +95,7 @@ export class MarpContentService {
       slideCount: request.slideCount,
       purpose: request.purpose,
       theme: request.theme,
-      designer: request.designer,
+      presentationStyle: request.presentationStyle || 'simple',
       includeImages: request.includeImages,
       customInstructions: request.customInstructions,
     };
@@ -260,7 +254,7 @@ export class MarpContentService {
         slideCount: slides.length,
         theme: 'professional',
         purpose: 'informative',
-        designer: 'The Academic Visualizer'
+        presentationStyle: 'simple'
       }
     };
   }
@@ -321,13 +315,13 @@ export class MarpContentService {
       }
     }
 
-    // フォールバック: 最初の文から適切な部分を抽出
+    // 代替案: 最初の文から適切な部分を抽出
     const firstSentence = rawTitle.split(/[。\n]/)[0];
     if (firstSentence && firstSentence.length <= 80 && !firstSentence.includes('ユーザー') && !firstSentence.includes('構成')) {
       return firstSentence.trim();
     }
 
-    // 最終フォールバック: 汎用的なタイトル
+    // 最終的な汎用タイトル
     return 'プレゼンテーション';
   }
 
@@ -368,158 +362,8 @@ export class MarpContentService {
   }
 
 
-  /**
-   * 物語・創作系コンテンツかどうかを判定（統合分析優先）
-   */
-  private determineStoryContent(topic: string, purpose: string, theme: string, options: MarpContentOptions): boolean {
-    // 統合分析結果が利用可能な場合はそちらを優先
-    if ((options as any).isStoryContent !== undefined) {
-      console.log('📚 Using unified analysis result for story detection:', (options as any).isStoryContent);
-      return (options as any).isStoryContent;
-    }
-    
-    // フォールバック: 保険処理としてのキーワードマッチング
-    console.log('⚠️ Using fallback keyword matching for story detection');
-    return this.isStoryContentFallback(topic, purpose, theme);
-  }
 
-  /**
-   * 物語・創作系コンテンツかどうかを判定（保険処理のキーワードマッチング）
-   */
-  private isStoryContentFallback(topic: string, purpose: string, theme: string): boolean {
-    // 物語系のキーワード検出（保険処理）
-    const storyKeywords = [
-      '物語', '昔話', '童話', 'おとぎ話', '民話', '伝説', '神話',
-      '紙芝居', '絵本', '読み聞かせ',
-      '桃太郎', 'かぐや姫', 'シンデレラ', '白雪姫', 'アンデルセン'
-    ];
-    
-    // purpose/themeによる判定
-    const storyPurposes = ['storytelling', 'children_content', 'creative_project'];
-    const storyThemes = ['storytelling', 'children_bright', 'children_pastel', 'hand_drawn'];
-    
-    const topicLower = topic.toLowerCase();
-    const hasStoryKeyword = storyKeywords.some(keyword => topic.includes(keyword));
-    const hasStoryPurpose = storyPurposes.includes(purpose);
-    const hasStoryTheme = storyThemes.includes(theme);
-    
-    return hasStoryKeyword || hasStoryPurpose || hasStoryTheme;
-  }
 
-  /**
-   * 物語専用のMarpプロンプト構築（簡素化版）
-   */
-  private buildStoryMarpPrompt(topic: string, slideCount: number, generatedTitle: string, includeImages: boolean): string {
-    if (this.promptResources.fallback) {
-      return this.buildFallbackStoryPrompt(topic, slideCount, generatedTitle, includeImages);
-    }
 
-    const imageInstruction = includeImages ? '**画像説明:** [関連する画像の説明]' : '';
-    
-    let promptTemplate = contextIntelligenceResources.marpContentGeneration.storyMarpPrompt;
-    
-    return promptTemplate
-      .replace(/{topic}/g, topic)
-      .replace(/{slideCount}/g, slideCount.toString())
-      .replace(/{generatedTitle}/g, generatedTitle)
-      .replace(/{imageInstruction}/g, imageInstruction);
-  }
 
-  // フォールバックメソッドを追加
-  private buildFallbackTitlePrompt(options: MarpContentOptions): string {
-    const { topic, purpose, theme, designer, slideCount } = options;
-    return `以下の条件に基づいて、最適なプレゼンテーションタイトルを1つ生成してください。
-
-**条件:**
-- 内容: ${topic}
-- 用途: ${purpose}
-- テーマ: ${theme}
-- デザイナー: ${designer}
-- スライド数: ${slideCount}枚
-
-**タイトル要件（重要）:**
-- 必ず15-25文字以内で収める
-- 内容が一目で分かる簡潔な表現
-- 対象者と用途に適している
-- 覚えやすく親しみやすい
-
-**絶対条件:**
-- タイトルのみを1行で出力
-- 説明文、解説、前置きは一切不要
-- 25文字を超える場合は必ず短縮する
-
-**出力例:**
-ロジカルシンキング研修（15文字）
-データ分析入門講座（10文字）`;
-  }
-
-  private buildFallbackMarpPrompt(options: MarpContentOptions, generatedTitle: string): string {
-    const {
-      topic,
-      slideCount = 5,
-      theme = 'professional',
-      includeImages = true,
-      customInstructions = ''
-    } = options;
-    
-    const imageInstruction = includeImages ? '**画像説明:** [関連する画像の説明]' : '';
-
-    return `「${topic}」について${slideCount}枚のプレゼンテーション資料を作成してください。
-タイトルは"${generatedTitle}"を使用してください。
-
-あなたの専門知識を活用して、最も有用で正確な内容を提供してください。
-
-Marp形式で出力：
-
----
-title: ${generatedTitle}
-description: ${generatedTitle}について
-theme: ${theme}
----
-
-# ${generatedTitle}
-## サブタイトル
-
----
-
-# 2枚目のスライド
-内容...
-${imageInstruction}
-**ノート:** スピーカーノート
-
-以降${slideCount}枚まで続ける。
-
-${customInstructions}`;
-  }
-
-  private buildFallbackStoryPrompt(topic: string, slideCount: number, generatedTitle: string, includeImages: boolean): string {
-    const imageInstruction = includeImages ? '**画像説明:** [関連する画像の説明]' : '';
-    
-    return `「${topic}」について${slideCount}枚のスライドを作成してください。
-タイトルは"${generatedTitle}"を使用してください。
-
-Marp形式で出力：
-
----
-title: ${generatedTitle}
-description: ${generatedTitle}
-theme: storytelling
----
-
-# ${generatedTitle}
-## サブタイトル
-
-${imageInstruction}
-**ノート:** スピーカーノート
-
----
-
-# 2枚目のスライド
-内容...
-
-${imageInstruction}
-**ノート:** スピーカーノート
-
-以降${slideCount}枚まで続ける。`;
-  }
 }

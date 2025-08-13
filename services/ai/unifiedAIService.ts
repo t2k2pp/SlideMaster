@@ -153,9 +153,8 @@ class GeminiUnifiedService implements UnifiedAIService {
         console.log('✅ GeminiUnifiedAIService: Enhanced prompt generation completed!');
         return result;
       } else {
-        console.log('⚠️ GeminiUnifiedAIService: No enhanced prompt provided, using fallback...');
-        // 従来の方式を維持（後方互換性）
-        return await this.textService.generateSlideContent(topic, slideCount);
+        console.error('❌ GeminiUnifiedAIService: Enhanced prompt is required');
+        throw new Error('強化プロンプトが必要です。適切なプロンプトを指定してください。');
       }
     } catch (error) {
       throw new AIServiceError(
@@ -254,9 +253,9 @@ class AzureUnifiedService implements UnifiedAIService {
     // モデル非推奨警告
     checkModelDeprecation('azureOpenAI', this.currentModel);
 
-    // 画像生成専用設定を使用、なければテキスト生成設定をフォールバック
+    // 画像生成専用設定を使用、なければテキスト生成設定を代用
     const imageAuth = azureAuth.imageGeneration || azureAuth.textGeneration;
-    // 動画分析専用設定を使用、なければテキスト生成設定をフォールバック
+    // 動画分析専用設定を使用、なければテキスト生成設定を代用
     const videoAuth = azureAuth.videoAnalysis || azureAuth.textGeneration;
 
     this.azureService = createAzureService({
@@ -338,9 +337,8 @@ class AzureUnifiedService implements UnifiedAIService {
         console.log('✅ UnifiedAIService: Enhanced prompt generation completed!');
         return result;
       } else {
-        console.log('⚠️ UnifiedAIService: No enhanced prompt provided, using fallback...');
-        // 従来の方式を維持（後方互換性）
-        return await this.azureService.generateSlideContent(topic, slideCount);
+        console.error('❌ UnifiedAIService: Enhanced prompt is required');
+        throw new Error('強化プロンプトが必要です。適切なプロンプトを指定してください。');
       }
     } catch (error) {
       throw new AIServiceError(
