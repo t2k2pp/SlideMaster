@@ -239,8 +239,8 @@ export const exportProject = async (presentation: Presentation): Promise<ExportR
       }
     }
     
-    // Add AI interaction history
-    addAIHistoryToZip(zip, sanitizedPresentation);
+    // Add AI interaction history (Enhanced with Complete History)
+    await addAIHistoryToZip(zip, sanitizedPresentation);
     
     // Get current user settings for AI configuration
     const currentUserSettings = getUserSettings();

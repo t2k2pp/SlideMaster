@@ -5,30 +5,57 @@
 
 import JSZip from 'jszip';
 import { Presentation, AIInteractionHistoryItem, AIInteractionType, AIInteractionStatus } from '../../types';
+import { completeAIHistory } from '../ai/completeAIHistoryService';
+import { individualAIHistoryExporter, ExportConfiguration } from '../ai/individualAIHistoryExporter';
 
 /**
- * Add AI interaction history to ZIP file
+ * Add AI interaction history to ZIP file (Enhanced with Complete History)
  */
-export const addAIHistoryToZip = (zip: JSZip, presentation: Presentation): void => {
+export const addAIHistoryToZip = async (zip: JSZip, presentation: Presentation): Promise<void> => {
   try {
-    // Add generation history if it exists (legacy)
+    // Add legacy generation history if it exists
     if (presentation.generationHistory && presentation.generationHistory.length > 0) {
       zip.file('generation_history.json', JSON.stringify(presentation.generationHistory, null, 2));
     }
     
-    // Add AI interaction history if it exists
+    // Get all AI interactions (from presentation + complete history service)
+    let allInteractions: AIInteractionHistoryItem[] = [];
+    
+    // 1. Standard AI interaction history from presentation
     if (presentation.aiInteractionHistory && presentation.aiInteractionHistory.length > 0) {
+      allInteractions.push(...presentation.aiInteractionHistory);
+    }
+    
+    // 2. Complete AI history from CompleteAIHistoryService
+    try {
+      completeAIHistory.setCurrentPresentation(presentation);
+      const completeInteractions = completeAIHistory.getAllInteractions();
+      console.log(`📊 Found ${completeInteractions.length} interactions from CompleteAIHistoryService`);
+      
+      // Merge with presentation interactions (avoid duplicates by ID)
+      const existingIds = new Set(allInteractions.map(i => i.id));
+      const newInteractions = completeInteractions.filter(i => !existingIds.has(i.id));
+      allInteractions.push(...newInteractions);
+      
+      console.log(`📊 Total unique interactions: ${allInteractions.length}`);
+    } catch (error) {
+      console.warn('Failed to get complete AI history:', error);
+    }
+    
+    if (allInteractions.length > 0) {
       const historyFolder = zip.folder('history');
       if (historyFolder) {
-        // Complete AI interaction history
-        historyFolder.file('ai_interactions.json', JSON.stringify(presentation.aiInteractionHistory, null, 2));
+        // === Legacy format exports ===
+        
+        // Complete AI interaction history (JSON format)
+        historyFolder.file('ai_interactions.json', JSON.stringify(allInteractions, null, 2));
         
         // Summary statistics
-        const stats = calculateInteractionStatistics(presentation.aiInteractionHistory);
+        const stats = calculateInteractionStatistics(allInteractions);
         historyFolder.file('interaction_statistics.json', JSON.stringify(stats, null, 2));
         
         // Detailed logs by type
-        const logsByType = groupInteractionsByType(presentation.aiInteractionHistory);
+        const logsByType = groupInteractionsByType(allInteractions);
         Object.entries(logsByType).forEach(([type, interactions]) => {
           if (interactions.length > 0) {
             historyFolder.file(`${type}_interactions.json`, JSON.stringify(interactions, null, 2));
@@ -36,20 +63,68 @@ export const addAIHistoryToZip = (zip: JSZip, presentation: Presentation): void 
         });
         
         // Cost analysis
-        const costAnalysis = calculateCostAnalysis(presentation.aiInteractionHistory);
+        const costAnalysis = calculateCostAnalysis(allInteractions);
         historyFolder.file('cost_analysis.json', JSON.stringify(costAnalysis, null, 2));
         
         // CSV export for easy analysis
-        const csvData = convertInteractionsToCSV(presentation.aiInteractionHistory);
+        const csvData = convertInteractionsToCSV(allInteractions);
         historyFolder.file('ai_interactions.csv', csvData);
         
         // Readable summary report
-        const summaryReport = generateSummaryReport(presentation.aiInteractionHistory);
+        const summaryReport = generateSummaryReport(allInteractions);
         historyFolder.file('INTERACTION_SUMMARY.md', summaryReport);
+        
+        // === NEW: Individual AI History Files Export ===
+        console.log('🚀 Starting individual AI history files export...');
+        
+        // Export configuration for complete data preservation
+        const exportConfig: ExportConfiguration = {
+          includePromptTransformations: true,
+          includeAPICallDetails: true,
+          includeMetadata: true,
+          includeErrorDetails: true,
+          fileFormat: 'both', // JSON + Markdown
+          separateByProvider: true,
+          separateByType: true,
+          humanReadableFormat: true
+        };
+        
+        try {
+          const individualFiles = await individualAIHistoryExporter.exportIndividualInteractionsToZip(
+            zip, 
+            allInteractions, 
+            exportConfig
+          );
+          
+          console.log(`✅ Successfully exported ${individualFiles.length} individual AI interaction files`);
+          console.log(`📁 Individual files total size: ${individualFiles.reduce((sum, f) => sum + f.size, 0)} bytes`);
+          
+          // Add export metadata
+          const exportMetadata = {
+            exportTimestamp: new Date().toISOString(),
+            totalInteractions: allInteractions.length,
+            individualFilesCount: individualFiles.length,
+            totalSizeBytes: individualFiles.reduce((sum, f) => sum + f.size, 0),
+            exportConfiguration: exportConfig,
+            completenessValidation: completeAIHistory.validateCompleteness(),
+            exportVersion: '2.0-complete'
+          };
+          
+          historyFolder.file('export_metadata.json', JSON.stringify(exportMetadata, null, 2));
+          
+        } catch (error) {
+          console.error('❌ Failed to export individual AI history files:', error);
+          // Add error information but don't fail the entire export
+          historyFolder.file('export_error.json', JSON.stringify({
+            error: error instanceof Error ? error.message : 'Unknown error',
+            timestamp: new Date().toISOString(),
+            fallbackMode: true
+          }, null, 2));
+        }
       }
     }
     
-    console.log('📊 AI history added to export');
+    console.log('📊 Enhanced AI history added to export with complete data preservation');
     
   } catch (error) {
     console.error('Error adding AI history to ZIP:', error);
