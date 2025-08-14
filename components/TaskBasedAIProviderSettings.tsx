@@ -1,18 +1,21 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { UserSettings, ProviderAuthConfig, ProviderTaskAuth } from '../services/storageService';
-import { MessageSquare, Image, Video, Brain } from 'lucide-react';
+import { MessageSquare, Image, Video, Brain, Wifi, WifiOff, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { getAvailableModels, TaskType } from '../services/ai/modelRegistry';
 import { AIProviderType } from '../services/ai/aiProviderInterface';
+import { testAPIConnection } from '../services/ai/unifiedAIService';
 
 // --- 定数定義 ---
 const PROVIDERS = {
   azure: { name: 'Azure OpenAI', icon: '🔵' },
   gemini: { name: 'Google Gemini', icon: '🟢' },
+  lmstudio: { name: 'LM Studio', icon: '🏠' },
+  fooocus: { name: 'Fooocus', icon: '🎨' },
 };
 
 const TASK_DEFINITIONS = {
-  text: { providers: ['azure', 'gemini'] as const, taskKey: 'textGeneration' as const },
-  image: { providers: ['azure', 'gemini'] as const, taskKey: 'imageGeneration' as const },
+  text: { providers: ['azure', 'gemini', 'lmstudio'] as const, taskKey: 'textGeneration' as const },
+  image: { providers: ['azure', 'gemini', 'fooocus'] as const, taskKey: 'imageGeneration' as const },
   video: { providers: ['azure', 'gemini'] as const, taskKey: 'videoAnalysis' as const },
 };
 
@@ -24,6 +27,16 @@ const AUTH_FIELDS: { [key in AIProviderType]?: { key: keyof ProviderTaskAuth, la
   ],
   gemini: [
     { key: 'apiKey', label: 'APIキー', type: 'password' },
+  ],
+  lmstudio: [
+    { key: 'endpoint', label: 'エンドポイント', type: 'url' },
+    { key: 'apiKey', label: 'APIキー（オプション）', type: 'password' },
+    { key: 'modelName', label: 'モデル表示名', type: 'text' },
+  ],
+  fooocus: [
+    { key: 'endpoint', label: 'エンドポイント', type: 'url' },
+    { key: 'apiKey', label: '認証トークン（オプション）', type: 'password' },
+    { key: 'modelName', label: 'モデル名', type: 'text' },
   ],
 };
 
@@ -92,6 +105,22 @@ const MODEL_OPTIONS = {
       { value: 'gemini-pro-vision', label: 'Gemini Pro Vision (レガシー)' },
     ],
   },
+  lmstudio: {
+    textGeneration: [
+      { value: 'gemma-3n-e4b', label: 'Gemma 3n E4B (推奨・軽量)' },
+      { value: 'gemma-3-4b', label: 'Gemma 3 4B (推奨・バランス)' },
+      { value: 'phi-4-mini-reasoning', label: 'Phi 4 Mini Reasoning (推奨・軽量)' },
+      { value: 'deepseek-r1', label: 'DeepSeek R1 (推論特化)' },
+      { value: 'custom-model', label: 'カスタムモデル' },
+    ],
+  },
+  fooocus: {
+    imageGeneration: [
+      { value: 'stable-diffusion-xl', label: 'Stable Diffusion XL (推奨)' },
+      { value: 'stable-diffusion-turbo', label: 'Stable Diffusion Turbo (高速)' },
+      { value: 'custom-model', label: 'カスタムモデル' },
+    ],
+  },
 };
 
 // --- ヘルパー関数 ---
@@ -110,6 +139,13 @@ interface TaskSettingProps {
   onSettingsChange: (updates: Partial<UserSettings>) => void;
 }
 
+// 接続テスト結果の型定義
+interface ConnectionTestResult {
+  status: 'idle' | 'testing' | 'success' | 'error';
+  message?: string;
+  timestamp?: Date;
+}
+
 const TaskSetting: React.FC<TaskSettingProps> = React.memo(({
   task,
   icon,
@@ -123,6 +159,9 @@ const TaskSetting: React.FC<TaskSettingProps> = React.memo(({
   
   const availableModels = React.useMemo(() => getModelsForProvider(currentProvider, task), [currentProvider, task]);
   const currentModel = settings.aiModels?.[taskKey] || '';
+  
+  // 接続テスト状態管理
+  const [testResult, setTestResult] = useState<ConnectionTestResult>({ status: 'idle' });
 
   const handleProviderChange = (provider: AIProviderType) => {
     // 現在のプロバイダーの設定を保存
@@ -182,8 +221,43 @@ const TaskSetting: React.FC<TaskSettingProps> = React.memo(({
     onSettingsChange({ providerAuth: newProviderAuth });
   };
 
+  // 接続テスト実行
+  const handleConnectionTest = async () => {
+    setTestResult({ status: 'testing', message: '接続テスト中...' });
+    
+    try {
+      const isConnected = await testAPIConnection(task);
+      
+      if (isConnected) {
+        setTestResult({
+          status: 'success',
+          message: '接続成功！',
+          timestamp: new Date()
+        });
+      } else {
+        setTestResult({
+          status: 'error',
+          message: '接続に失敗しました。設定を確認してください。',
+          timestamp: new Date()
+        });
+      }
+    } catch (error) {
+      setTestResult({
+        status: 'error',
+        message: error instanceof Error ? error.message : '接続エラーが発生しました',
+        timestamp: new Date()
+      });
+    }
+  };
+  
   const authFields = AUTH_FIELDS[currentProvider] || [];
   const currentAuth = settings.providerAuth?.[currentProvider]?.[taskKey] || {};
+  
+  // ローカルLLMプロバイダーかどうかを判定
+  const isLocalLLM = currentProvider === 'lmstudio' || currentProvider === 'fooocus';
+  
+  // 接続テストボタンの表示条件（ローカルLLMまたは設定が入力済み）
+  const showConnectionTest = isLocalLLM || (currentAuth.apiKey && (currentAuth.endpoint || currentProvider === 'gemini'));
 
   return (
     <div className="bg-white/5 rounded-lg p-4 border border-white/10 space-y-4">
@@ -232,6 +306,59 @@ const TaskSetting: React.FC<TaskSettingProps> = React.memo(({
           </select>
         </div>
       ) : null}
+      
+      {/* 接続テストセクション */}
+      {showConnectionTest && (
+        <div className="border-t border-white/10 pt-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-400">接続テスト</span>
+            <button
+              onClick={handleConnectionTest}
+              disabled={testResult.status === 'testing'}
+              className="flex items-center gap-2 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-lg text-sm text-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {testResult.status === 'testing' ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Wifi className="w-4 h-4" />
+              )}
+              {testResult.status === 'testing' ? 'テスト中...' : 'テスト実行'}
+            </button>
+          </div>
+          
+          {/* テスト結果表示 */}
+          {testResult.status !== 'idle' && (
+            <div className={`flex items-start gap-2 p-3 rounded-lg border text-sm ${
+              testResult.status === 'success'
+                ? 'bg-green-500/10 border-green-500/30 text-green-300'
+                : testResult.status === 'error'
+                ? 'bg-red-500/10 border-red-500/30 text-red-300'
+                : 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+            }`}>
+              {testResult.status === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              ) : testResult.status === 'error' ? (
+                <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              ) : (
+                <Loader2 className="w-4 h-4 mt-0.5 flex-shrink-0 animate-spin" />
+              )}
+              <div className="flex-1">
+                <div>{testResult.message}</div>
+                {testResult.timestamp && (
+                  <div className="text-xs opacity-70 mt-1">
+                    {testResult.timestamp.toLocaleTimeString()}
+                  </div>
+                )}
+                {testResult.status === 'error' && isLocalLLM && (
+                  <div className="text-xs opacity-70 mt-2">
+                    💡 ヒント: {currentProvider === 'lmstudio' ? 'LM Studio' : 'Fooocus'}が起動していることを確認してください
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 });

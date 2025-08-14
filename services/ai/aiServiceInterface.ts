@@ -102,8 +102,8 @@ export type ImageSize = '1024x1024' | '1792x1024' | '1024x1792';
 export type ImageQuality = 'standard' | 'hd';
 export type ImageStyle = 'natural' | 'vivid';
 
-// プロバイダータイプ（将来の拡張用）
-export type AIProviderType = 'azure' | 'future_provider_1' | 'future_provider_2';
+// プロバイダータイプ（ローカルLLM対応）
+export type AIProviderType = 'azure' | 'gemini' | 'lmstudio' | 'fooocus';
 
 // エラー型
 export class AIServiceError extends Error {

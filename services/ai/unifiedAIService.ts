@@ -5,9 +5,11 @@
 
 import { AzureService, createAzureService } from './azureService';
 import { GeminiService, createGeminiServiceFromSettings, createGeminiServiceForTask } from './geminiService';
+import { LMStudioUnifiedService, FoocusUnifiedService } from './localLLMUnifiedService';
 import { getUserSettings } from '../storageService';
 import { EnhancedSlideRequest, EnhancedAIService } from './aiServiceInterface';
 import { getRecommendedMaxTokens, getModelLimits, checkModelDeprecation } from './aiModelLimits';
+import { ExtendedUserSettings } from './localLLMTypes';
 
 // 統一されたAIサービスインターフェース
 export interface UnifiedAIService extends EnhancedAIService {
@@ -418,7 +420,7 @@ class AzureUnifiedService implements UnifiedAIService {
 
 // タスク別プロバイダー対応のファクトリ関数
 export function createTaskSpecificAIService(taskType: 'text' | 'image' | 'video'): UnifiedAIService {
-  const settings = getUserSettings();
+  const settings = getUserSettings() as ExtendedUserSettings;
   
   // タスク別プロバイダー設定を取得
   let provider: string;
@@ -441,9 +443,10 @@ export function createTaskSpecificAIService(taskType: 'text' | 'image' | 'video'
       return new AzureUnifiedService();
     case 'gemini':
       return new GeminiUnifiedService();
-    // 将来の拡張ポイント:
-    // case 'lmstudio':
-    //   return new LMStudioUnifiedService();
+    case 'lmstudio':
+      return new LMStudioUnifiedService();
+    case 'fooocus':
+      return new FoocusUnifiedService();
     default:
       throw new AIServiceError(`サポートされていないAIプロバイダーです: ${provider}`, 'unknown', 'UNSUPPORTED_PROVIDER');
   }
@@ -514,7 +517,7 @@ export async function analyzeVideo(videoData: string, prompt?: string): Promise<
 // タスク別APIキー検証機能
 export function hasValidAPIKey(taskType: 'text' | 'image' | 'video' = 'text'): boolean {
   try {
-    const settings = getUserSettings();
+    const settings = getUserSettings() as ExtendedUserSettings;
     let provider: string;
     let taskKey: string;
     
@@ -548,6 +551,12 @@ export function hasValidAPIKey(taskType: 'text' | 'image' | 'video' = 'text'): b
       case 'gemini':
         const geminiAuth = settings.providerAuth?.gemini?.[taskKey];
         return !!(geminiAuth?.apiKey);
+      case 'lmstudio':
+        const lmstudioAuth = settings.providerAuth?.lmstudio?.[taskKey];
+        return !!(lmstudioAuth?.endpoint); // LMStudioはエンドポイントのみ必要
+      case 'fooocus':
+        const foocusAuth = settings.providerAuth?.fooocus?.[taskKey];
+        return !!(foocusAuth?.endpoint); // Foocusもエンドポイントのみ必要
       default:
         return false;
     }
@@ -559,7 +568,7 @@ export function hasValidAPIKey(taskType: 'text' | 'image' | 'video' = 'text'): b
 // 設定の詳細なチェックと不足項目の報告
 export function validateAIConfiguration(taskType: 'text' | 'image' | 'video' = 'text'): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
-  const settings = getUserSettings();
+  const settings = getUserSettings() as ExtendedUserSettings;
   
   let provider: string;
   let taskKey: string;
@@ -602,6 +611,18 @@ export function validateAIConfiguration(taskType: 'text' | 'image' | 'video' = '
       const geminiAuth = settings.providerAuth?.gemini?.[taskKey];
       if (!geminiAuth?.apiKey) {
         errors.push(`Gemini APIキーが設定されていません（${taskType}）`);
+      }
+      break;
+    case 'lmstudio':
+      const lmstudioAuth = settings.providerAuth?.lmstudio?.[taskKey];
+      if (!lmstudioAuth?.endpoint) {
+        errors.push(`LMStudio エンドポイントが設定されていません（${taskType}）`);
+      }
+      break;
+    case 'fooocus':
+      const foocusAuth = settings.providerAuth?.fooocus?.[taskKey];
+      if (!foocusAuth?.endpoint) {
+        errors.push(`Fooocus エンドポイントが設定されていません（${taskType}）`);
       }
       break;
     default:
