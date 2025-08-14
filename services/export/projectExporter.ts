@@ -7,7 +7,7 @@ import {
   APP_VERSION, 
   CURRENT_FILE_FORMAT_VERSION 
 } from '../../utils/versionManager';
-import { checkAndUpgradePresentation, checkImportCompatibility } from '../storageService';
+import { checkAndUpgradePresentation, checkImportCompatibility, getUserSettings, UserSettings, ImageGenerationSettings } from '../storageService';
 import {
   generateFilename,
   createErrorResult,
@@ -17,10 +17,181 @@ import {
 import { sanitizePresentationImages } from '../../utils/imageDataValidator';
 import { notify } from '../../utils/notificationService';
 import { handleProjectSaveError, handleProjectImportError } from '../../utils/errorHandler';
+import { addProjectImages } from './projectImageHandler';
+import { addAIHistoryToZip, importAIHistoryFromZip } from './projectAIHistoryHandler';
 
 // =================================================================
 // Project Export Service - SlideMaster project format export/import
 // =================================================================
+
+// プロジェクトファイルに含める設定情報の型定義（将来のマルチプロバイダー対応を考慮）
+export interface ProjectAISettings {
+  // 現在のプロバイダー選択（将来の拡張に対応）
+  aiProviderText?: 'azure' | 'gemini' | 'openai' | 'claude' | 'lmstudio';
+  aiProviderImage?: 'azure' | 'gemini' | 'openai' | 'fooocus';
+  aiProviderVideo?: 'azure' | 'gemini' | 'openai' | 'claude';
+  
+  // モデル選択（プロバイダー非依存）
+  aiModels?: {
+    textGeneration?: string;
+    imageGeneration?: string;
+    videoAnalysis?: string;
+  };
+  
+  // 画像生成設定
+  imageGenerationSettings?: ImageGenerationSettings;
+  
+  // プロバイダー固有設定（APIキーは除外、構造のみ保存）
+  providerConfig?: {
+    azure?: {
+      hasTextGeneration: boolean;
+      hasImageGeneration: boolean;
+      hasVideoAnalysis: boolean;
+      textModel?: string;
+      imageModel?: string;
+      videoModel?: string;
+    };
+    gemini?: {
+      hasTextGeneration: boolean;
+      hasImageGeneration: boolean;
+      hasVideoAnalysis: boolean;
+      textModel?: string;
+      imageModel?: string;
+      videoModel?: string;
+    };
+    openai?: {
+      hasTextGeneration: boolean;
+      hasImageGeneration: boolean;
+      hasVideoAnalysis: boolean;
+      textModel?: string;
+      imageModel?: string;
+    };
+    claude?: {
+      hasTextGeneration: boolean;
+      hasVideoAnalysis: boolean;
+      textModel?: string;
+    };
+    lmstudio?: {
+      hasTextGeneration: boolean;
+      endpoint?: string;  // APIキーではないエンドポイント情報は保存可能
+      models?: string[];
+    };
+    fooocus?: {
+      hasImageGeneration: boolean;
+      endpoint?: string;
+      models?: string[];
+    };
+  };
+  
+  // プレゼンテーション作成時の設定コンテキスト
+  creationContext?: {
+    primaryProvider: string;
+    modelsUsed: string[];
+    settingsSnapshot: Date;
+  };
+}
+
+/**
+ * 現在のユーザー設定からプロジェクト用のAI設定を生成（APIキーは除外）
+ */
+function createProjectAISettings(userSettings: UserSettings): ProjectAISettings {
+  const projectSettings: ProjectAISettings = {
+    // プロバイダー選択
+    aiProviderText: userSettings.aiProviderText,
+    aiProviderImage: userSettings.aiProviderImage,
+    aiProviderVideo: userSettings.aiProviderVideo,
+    
+    // モデル設定
+    aiModels: userSettings.aiModels ? { ...userSettings.aiModels } : undefined,
+    
+    // 画像生成設定
+    imageGenerationSettings: userSettings.imageGenerationSettings ? 
+      { ...userSettings.imageGenerationSettings } : undefined,
+    
+    // プロバイダー設定構造（APIキーは除外）
+    providerConfig: {},
+    
+    // 作成時のコンテキスト
+    creationContext: {
+      primaryProvider: userSettings.aiProviderText || 'azure',
+      modelsUsed: [
+        userSettings.aiModels?.textGeneration,
+        userSettings.aiModels?.imageGeneration,
+        userSettings.aiModels?.videoAnalysis
+      ].filter(Boolean) as string[],
+      settingsSnapshot: new Date()
+    }
+  };
+
+  // プロバイダー固有設定の構造を保存（APIキーは除外）
+  if (userSettings.providerAuth) {
+    // Azure設定
+    if (userSettings.providerAuth.azure) {
+      projectSettings.providerConfig!.azure = {
+        hasTextGeneration: !!userSettings.providerAuth.azure.textGeneration,
+        hasImageGeneration: !!userSettings.providerAuth.azure.imageGeneration,
+        hasVideoAnalysis: !!userSettings.providerAuth.azure.videoAnalysis,
+        textModel: userSettings.providerAuth.azure.textGeneration?.modelName,
+        imageModel: userSettings.providerAuth.azure.imageGeneration?.modelName,
+        videoModel: userSettings.providerAuth.azure.videoAnalysis?.modelName,
+      };
+    }
+    
+    // 将来のGemini設定復活に備えた構造（現在は存在しないが将来の拡張用）
+    if ((userSettings.providerAuth as any).gemini) {
+      projectSettings.providerConfig!.gemini = {
+        hasTextGeneration: !!(userSettings.providerAuth as any).gemini.textGeneration,
+        hasImageGeneration: !!(userSettings.providerAuth as any).gemini.imageGeneration,
+        hasVideoAnalysis: !!(userSettings.providerAuth as any).gemini.videoAnalysis,
+        textModel: (userSettings.providerAuth as any).gemini.textGeneration?.modelName,
+        imageModel: (userSettings.providerAuth as any).gemini.imageGeneration?.modelName,
+        videoModel: (userSettings.providerAuth as any).gemini.videoAnalysis?.modelName,
+      };
+    }
+    
+    // 将来のOpenAI設定復活に備えた構造（現在は存在しないが将来の拡張用）
+    if ((userSettings.providerAuth as any).openai) {
+      projectSettings.providerConfig!.openai = {
+        hasTextGeneration: !!(userSettings.providerAuth as any).openai.textGeneration,
+        hasImageGeneration: !!(userSettings.providerAuth as any).openai.imageGeneration,
+        hasVideoAnalysis: !!(userSettings.providerAuth as any).openai.videoAnalysis,
+        textModel: (userSettings.providerAuth as any).openai.textGeneration?.modelName,
+        imageModel: (userSettings.providerAuth as any).openai.imageGeneration?.modelName,
+      };
+    }
+    
+    // 将来のClaude設定復活に備えた構造（現在は存在しないが将来の拡張用）
+    if ((userSettings.providerAuth as any).claude) {
+      projectSettings.providerConfig!.claude = {
+        hasTextGeneration: !!(userSettings.providerAuth as any).claude.textGeneration,
+        hasVideoAnalysis: !!(userSettings.providerAuth as any).claude.videoAnalysis,
+        textModel: (userSettings.providerAuth as any).claude.textGeneration?.modelName,
+      };
+    }
+    
+    // 将来のLM Studio設定復活に備えた構造（現在は存在しないが将来の拡張用）
+    if ((userSettings.providerAuth as any).lmstudio) {
+      projectSettings.providerConfig!.lmstudio = {
+        hasTextGeneration: !!(userSettings.providerAuth as any).lmstudio.textGeneration,
+        endpoint: (userSettings.providerAuth as any).lmstudio.textGeneration?.endpoint,
+        models: (userSettings.providerAuth as any).lmstudio.textGeneration?.modelName ? 
+          [(userSettings.providerAuth as any).lmstudio.textGeneration.modelName] : undefined,
+      };
+    }
+    
+    // 将来のFooocus設定復活に備えた構造（現在は存在しないが将来の拡張用）
+    if ((userSettings.providerAuth as any).fooocus) {
+      projectSettings.providerConfig!.fooocus = {
+        hasImageGeneration: !!(userSettings.providerAuth as any).fooocus.imageGeneration,
+        endpoint: (userSettings.providerAuth as any).fooocus.imageGeneration?.endpoint,
+        models: (userSettings.providerAuth as any).fooocus.imageGeneration?.modelName ? 
+          [(userSettings.providerAuth as any).fooocus.imageGeneration.modelName] : undefined,
+      };
+    }
+  }
+
+  return projectSettings;
+}
 
 /**
  * Export presentation as SlideMaster project file (Original ZIP format)
@@ -44,6 +215,9 @@ export const exportProject = async (presentation: Presentation): Promise<ExportR
     // Add presentation data (using sanitized version)
     zip.file('presentation.json', JSON.stringify(sanitizedPresentation, null, 2));
     
+    // Extract and add image files from IndexedDB
+    await addProjectImages(zip, sanitizedPresentation);
+    
     // Add slide sources if they exist
     if (sanitizedPresentation.sources && sanitizedPresentation.sources.length > 0) {
       const sourcesFolder = zip.folder('sources');
@@ -65,45 +239,14 @@ export const exportProject = async (presentation: Presentation): Promise<ExportR
       }
     }
     
-    // Add generation history if it exists
-    if (sanitizedPresentation.generationHistory && sanitizedPresentation.generationHistory.length > 0) {
-      zip.file('generation_history.json', JSON.stringify(sanitizedPresentation.generationHistory, null, 2));
-    }
+    // Add AI interaction history
+    addAIHistoryToZip(zip, sanitizedPresentation);
     
-    // Add AI interaction history if it exists
-    if (sanitizedPresentation.aiInteractionHistory && sanitizedPresentation.aiInteractionHistory.length > 0) {
-      const historyFolder = zip.folder('history');
-      if (historyFolder) {
-        // Complete AI interaction history
-        historyFolder.file('ai_interactions.json', JSON.stringify(sanitizedPresentation.aiInteractionHistory, null, 2));
-        
-        // Summary statistics
-        const stats = calculateInteractionStatistics(sanitizedPresentation.aiInteractionHistory);
-        historyFolder.file('interaction_statistics.json', JSON.stringify(stats, null, 2));
-        
-        // Detailed logs by type
-        const logsByType = groupInteractionsByType(sanitizedPresentation.aiInteractionHistory);
-        Object.entries(logsByType).forEach(([type, interactions]) => {
-          if (interactions.length > 0) {
-            historyFolder.file(`${type}_interactions.json`, JSON.stringify(interactions, null, 2));
-          }
-        });
-        
-        // Cost analysis
-        const costAnalysis = calculateCostAnalysis(sanitizedPresentation.aiInteractionHistory);
-        historyFolder.file('cost_analysis.json', JSON.stringify(costAnalysis, null, 2));
-        
-        // CSV export for easy analysis
-        const csvData = convertInteractionsToCSV(sanitizedPresentation.aiInteractionHistory);
-        historyFolder.file('ai_interactions.csv', csvData);
-        
-        // Readable summary report
-        const summaryReport = generateSummaryReport(sanitizedPresentation.aiInteractionHistory);
-        historyFolder.file('INTERACTION_SUMMARY.md', summaryReport);
-      }
-    }
+    // Get current user settings for AI configuration
+    const currentUserSettings = getUserSettings();
+    const projectAISettings = createProjectAISettings(currentUserSettings);
     
-    // Add metadata with version information
+    // Add metadata with version information and AI settings
     const metadata = {
       name: sanitizedPresentation.title,
       description: sanitizedPresentation.description,
@@ -118,11 +261,16 @@ export const exportProject = async (presentation: Presentation): Promise<ExportR
       imageSanitization: {
         sanitizedCount,
         errors: errors.length > 0 ? errors : undefined
-      }
+      },
+      // AI設定情報を追加（将来のマルチプロバイダー対応を考慮）
+      aiSettings: projectAISettings
     };
     zip.file('metadata.json', JSON.stringify(metadata, null, 2));
+    
+    // AI設定を専用ファイルとしても保存（詳細情報用）
+    zip.file('ai_settings.json', JSON.stringify(projectAISettings, null, 2));
 
-    // Add README with sanitization info
+    // Add README with sanitization info and AI settings
     const readme = `# ${sanitizedPresentation.title}
 
 ## Description
@@ -135,12 +283,34 @@ ${sanitizedPresentation.description}
 - Theme: ${sanitizedPresentation.theme}${sanitizedCount > 0 ? `
 - Image Sanitization: ${sanitizedCount} invalid image data entries were replaced with placeholders` : ''}
 
+## AI Configuration (at time of export)
+- Primary Text Provider: ${projectAISettings.aiProviderText || 'Not configured'}
+- Primary Image Provider: ${projectAISettings.aiProviderImage || 'Not configured'}
+- Primary Video Provider: ${projectAISettings.aiProviderVideo || 'Not configured'}
+- Text Model: ${projectAISettings.aiModels?.textGeneration || 'Not specified'}
+- Image Model: ${projectAISettings.aiModels?.imageGeneration || 'Not specified'}
+- Video Model: ${projectAISettings.aiModels?.videoAnalysis || 'Not specified'}
+
+**Note**: API keys are not included in this project file for security reasons. You will need to configure your API keys separately when importing this project.
+
+## Available Providers Configuration
+${Object.entries(projectAISettings.providerConfig || {})
+  .filter(([_, config]) => config && Object.values(config).some(v => v))
+  .map(([provider, config]) => {
+    const capabilities = [];
+    if (config?.hasTextGeneration) capabilities.push('Text Generation');
+    if (config?.hasImageGeneration) capabilities.push('Image Generation');
+    if (config?.hasVideoAnalysis) capabilities.push('Video Analysis');
+    return `- **${provider.charAt(0).toUpperCase() + provider.slice(1)}**: ${capabilities.join(', ')}`;
+  }).join('\n') || '- No providers configured'}
+
 ## How to Import
 1. Open SlideMaster
 2. Click "Resume from Project"
 3. Select this ZIP file
+4. Configure your API keys in Settings if needed
 
-Generated by SlideMaster
+Generated by SlideMaster v${APP_VERSION}
 `;
     zip.file('README.md', readme);
 
@@ -249,6 +419,9 @@ export const importProject = async (file: File): Promise<{
     // Import AI interaction history if it exists
     await importAIInteractionHistory(zipContent, presentation);
 
+    // Import AI settings if they exist
+    const importedAISettings = await importAISettings(zipContent);
+
     // Add import metadata
     if (!presentation.compatibilityNotes) {
       presentation.compatibilityNotes = [];
@@ -257,8 +430,14 @@ export const importProject = async (file: File): Promise<{
       `Imported from project file on ${new Date().toISOString()}`,
       ...(metadata ? [`Original version: ${metadata.originalVersion || 'Unknown'}`] : []),
       ...(compatibility.warnings.length > 0 ? [`Warnings: ${compatibility.warnings.join(', ')}`] : []),
-      ...(sanitizedCount > 0 ? [`Image sanitization: ${sanitizedCount} invalid image entries replaced`] : [])
+      ...(sanitizedCount > 0 ? [`Image sanitization: ${sanitizedCount} invalid image entries replaced`] : []),
+      ...(importedAISettings ? ['AI settings available for restoration - check Settings to apply'] : [])
     );
+
+    // Store imported AI settings in presentation metadata for potential restoration
+    if (importedAISettings) {
+      (presentation as any).importedAISettings = importedAISettings;
+    }
 
     // Dismiss loading notification and show success
     notify.dismiss(loadingToastId);
@@ -490,6 +669,12 @@ export const validateProjectFile = async (file: File): Promise<{
     fileFormatVersion?: string;
     createdWith?: string;
     fileSize: number;
+    aiSettings?: {
+      hasSettings: boolean;
+      providers: string[];
+      primaryProvider?: string;
+      compatibilityWarnings: string[];
+    };
   };
 }> => {
   const errors: string[] = [];
@@ -501,15 +686,23 @@ export const validateProjectFile = async (file: File): Promise<{
       return { valid: false, errors, warnings };
     }
 
-    if (file.type !== 'application/json') {
-      errors.push('Invalid file type. Expected JSON file.');
+    // Support both ZIP and JSON file formats
+    const isZipFile = file.name.endsWith('.zip') || file.type === 'application/zip';
+    const isJsonFile = file.name.endsWith('.json') || file.type === 'application/json';
+
+    if (!isZipFile && !isJsonFile) {
+      errors.push('Invalid file type. Expected ZIP or JSON file.');
       return { valid: false, errors, warnings };
     }
-
 
     if (file.size === 0) {
       errors.push('File is empty.');
       return { valid: false, errors, warnings };
+    }
+
+    // Handle ZIP file validation
+    if (isZipFile) {
+      return await validateZipProjectFile(file, errors, warnings);
     }
 
     // Read and parse file
@@ -581,6 +774,174 @@ export const validateProjectFile = async (file: File): Promise<{
     return { valid: false, errors, warnings };
   }
 };
+
+/**
+ * Validate ZIP format project file
+ */
+async function validateZipProjectFile(
+  file: File, 
+  errors: string[], 
+  warnings: string[]
+): Promise<{
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  info?: {
+    title?: string;
+    slideCount?: number;
+    fileFormatVersion?: string;
+    createdWith?: string;
+    fileSize: number;
+    aiSettings?: {
+      hasSettings: boolean;
+      providers: string[];
+      primaryProvider?: string;
+      compatibilityWarnings: string[];
+    };
+  };
+}> {
+  try {
+    const zip = new JSZip();
+    const zipContent = await zip.loadAsync(file);
+
+    // Check for required files
+    const presentationFile = zipContent.file('presentation.json');
+    if (!presentationFile) {
+      errors.push('Invalid SlideMaster project: presentation.json not found');
+      return { valid: false, errors, warnings };
+    }
+
+    // Parse presentation data
+    const presentationData = await presentationFile.async('text');
+    let presentation: any;
+    try {
+      presentation = JSON.parse(presentationData);
+    } catch (parseError) {
+      errors.push('Invalid presentation.json: corrupted JSON data');
+      return { valid: false, errors, warnings };
+    }
+
+    // Basic presentation validation
+    if (!presentation.slides || !Array.isArray(presentation.slides)) {
+      errors.push('No valid slides found in the presentation');
+      return { valid: false, errors, warnings };
+    }
+
+    if (presentation.slides.length === 0) {
+      warnings.push('The presentation has no slides');
+    }
+
+    // Check metadata
+    let metadata = null;
+    const metadataFile = zipContent.file('metadata.json');
+    if (metadataFile) {
+      try {
+        const metadataText = await metadataFile.async('text');
+        metadata = JSON.parse(metadataText);
+      } catch (error) {
+        warnings.push('Metadata file is corrupted');
+      }
+    }
+
+    // Check AI settings
+    let aiSettingsInfo = {
+      hasSettings: false,
+      providers: [] as string[],
+      primaryProvider: undefined as string | undefined,
+      compatibilityWarnings: [] as string[]
+    };
+
+    const aiSettingsFile = zipContent.file('ai_settings.json');
+    if (aiSettingsFile || (metadata && metadata.aiSettings)) {
+      try {
+        let aiSettings: ProjectAISettings;
+        if (aiSettingsFile) {
+          const settingsData = await aiSettingsFile.async('text');
+          aiSettings = JSON.parse(settingsData);
+        } else {
+          aiSettings = metadata.aiSettings;
+        }
+
+        aiSettingsInfo.hasSettings = true;
+        aiSettingsInfo.primaryProvider = aiSettings.aiProviderText;
+        
+        // Collect configured providers
+        const configuredProviders = [];
+        if (aiSettings.providerConfig) {
+          Object.entries(aiSettings.providerConfig).forEach(([provider, config]) => {
+            if (config && Object.values(config).some(v => v)) {
+              configuredProviders.push(provider);
+            }
+          });
+        }
+        aiSettingsInfo.providers = configuredProviders;
+
+        // Check for compatibility warnings
+        const currentSettings = getUserSettings();
+        const currentProviders = Object.keys(currentSettings.providerAuth || {});
+        
+        const missingProviders = aiSettingsInfo.providers.filter(
+          provider => !currentProviders.includes(provider)
+        );
+        
+        if (missingProviders.length > 0) {
+          aiSettingsInfo.compatibilityWarnings.push(
+            `Missing providers: ${missingProviders.join(', ')}`
+          );
+          warnings.push(
+            `This project was created with providers not currently configured: ${missingProviders.join(', ')}`
+          );
+        }
+
+        if (aiSettings.aiProviderText && aiSettings.aiProviderText !== currentSettings.aiProviderText) {
+          aiSettingsInfo.compatibilityWarnings.push(
+            `Project uses ${aiSettings.aiProviderText} for text generation, current setting is ${currentSettings.aiProviderText}`
+          );
+        }
+
+      } catch (error) {
+        warnings.push('AI settings file is corrupted');
+      }
+    }
+
+    // Check compatibility
+    const compatibilityCheck = checkImportCompatibility(presentation);
+    if (!compatibilityCheck.canImport) {
+      if (compatibilityCheck.requiresUpgrade) {
+        errors.push('File was created with a newer version. Please update the application.');
+        return { valid: false, errors, warnings };
+      } else {
+        errors.push(`Incompatible file format: ${compatibilityCheck.warnings.join(', ')}`);
+        return { valid: false, errors, warnings };
+      }
+    }
+
+    if (compatibilityCheck.warnings && compatibilityCheck.warnings.length > 0) {
+      warnings.push(...compatibilityCheck.warnings);
+    }
+
+    // Gather file info
+    const info = {
+      title: presentation.title || metadata?.name,
+      slideCount: presentation.slides.length,
+      fileFormatVersion: metadata?.fileFormatVersion || presentation.fileFormatVersion || presentation.version,
+      createdWith: metadata?.exportedWith || presentation.createdWith || metadata?.createdWith,
+      fileSize: file.size,
+      aiSettings: aiSettingsInfo.hasSettings ? aiSettingsInfo : undefined
+    };
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+      info
+    };
+
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : 'Unknown validation error');
+    return { valid: false, errors, warnings };
+  }
+}
 
 // =================================================================
 // AI Interaction History Export Helper Functions
@@ -761,6 +1122,45 @@ Generated on ${new Date().toISOString()}
 }
 
 /**
+ * プロジェクトZIPファイルからAI設定をインポート
+ */
+async function importAISettings(zipContent: JSZip): Promise<ProjectAISettings | null> {
+  try {
+    // Check for dedicated AI settings file first
+    const aiSettingsFile = zipContent.file('ai_settings.json');
+    if (aiSettingsFile) {
+      const settingsData = await aiSettingsFile.async('text');
+      const aiSettings: ProjectAISettings = JSON.parse(settingsData);
+      console.log('Imported AI settings from ai_settings.json:', {
+        textProvider: aiSettings.aiProviderText,
+        imageProvider: aiSettings.aiProviderImage,
+        videoProvider: aiSettings.aiProviderVideo,
+        availableProviders: Object.keys(aiSettings.providerConfig || {})
+      });
+      return aiSettings;
+    }
+
+    // Check for AI settings in metadata (fallback)
+    const metadataFile = zipContent.file('metadata.json');
+    if (metadataFile) {
+      const metadataText = await metadataFile.async('text');
+      const metadata = JSON.parse(metadataText);
+      if (metadata.aiSettings) {
+        console.log('Imported AI settings from metadata.json');
+        return metadata.aiSettings as ProjectAISettings;
+      }
+    }
+
+    console.log('No AI settings found in project file');
+    return null;
+
+  } catch (error) {
+    console.warn('Failed to import AI settings:', error);
+    return null;
+  }
+}
+
+/**
  * プロジェクトZIPファイルからAI対話履歴をインポート
  */
 async function importAIInteractionHistory(
@@ -814,3 +1214,5 @@ async function importAIInteractionHistory(
     // Don't fail the entire import if history import fails
   }
 }
+
+// Image processing is now handled by projectImageHandler.ts

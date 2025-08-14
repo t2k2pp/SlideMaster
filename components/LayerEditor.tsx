@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { LayerEditorProps, TextLayer, ImageLayer, ShapeLayer } from '../types';
+import { LayerEditorProps, TextLayer, ImageLayer, ShapeLayer, SVGLayer } from '../types';
 import { TEXT_STYLES, THEME_CONFIGS } from '../constants';
-import { generateImage } from '../services/geminiService';
+import { generateSlideImage } from '../services/ai/unifiedAIService';
+import { setImageLayerNaturalDimensions } from '../utils/layerFactory';
 import { MarkdownRenderer } from '../utils/markdownRenderer';
 import { 
   Type, 
@@ -27,7 +28,36 @@ import {
   Clipboard,
   Undo,
   Redo,
+  Codepen, // SVG用のアイコン
 } from 'lucide-react';
+
+/**
+ * Get image dimensions from data URL or image source
+ */
+function getImageDimensions(src: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    // Check if we're in a browser environment
+    if (typeof window === 'undefined' || typeof Image === 'undefined') {
+      // Fallback for SSR or environments without Image constructor
+      resolve({ width: 1024, height: 1024 });
+      return;
+    }
+    
+    try {
+      const img = new (window as any).Image();
+      img.onload = () => {
+        resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      };
+      img.onerror = () => {
+        reject(new Error('Failed to load image'));
+      };
+      img.src = src;
+    } catch (error) {
+      console.warn('Image constructor not available, using fallback dimensions');
+      resolve({ width: 1024, height: 1024 });
+    }
+  });
+}
 
 // =================================================================
 // LayerEditor Component
@@ -496,6 +526,7 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
           {layer.type === 'text' && <Type size={16} className="text-blue-400" />}
           {layer.type === 'image' && <Image size={16} className="text-green-400" />}
           {layer.type === 'shape' && <Square size={16} className="text-purple-400" />}
+          {layer.type === 'svg' && <Codepen size={16} className="text-orange-400" />}
           <span className="text-sm font-medium text-slate-900 dark:text-white capitalize">{layer.type} Layer</span>
         </div>
         <div className="flex items-center gap-1">
@@ -772,19 +803,34 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
         // Use existing seed or generate new one if empty
         const usedSeed = imageLayer.seed || Math.floor(Math.random() * 2147483647);
         
-        const generatedImageSrc = await generateImage(
-          imageLayer.prompt,
-          undefined,
-          'business_presentation',
-          0,
-          [],
-          undefined,
-          undefined,
-          usedSeed
-        );
+        // 🎯 Context Intelligence Engine Enhanced Prompt Usage
+        let promptToUse = imageLayer.prompt;
         
-        // Update both src and seed (in case seed was generated)
-        onUpdate({ src: generatedImageSrc, seed: usedSeed });
+        // スライドメタデータからContext Intelligence Engineの拡張プロンプトを取得
+        if (slide && slide.metadata && slide.metadata.imagePrompt) {
+          console.log('🎭 Using Context Intelligence Engine enhanced image prompt!');
+          console.log('📝 Enhanced prompt length:', slide.metadata.imagePrompt.length);
+          promptToUse = slide.metadata.imagePrompt;
+        } else {
+          console.log('⚠️ No enhanced image prompt found, using basic prompt:', promptToUse);
+        }
+        
+        const generatedImageSrc = await generateSlideImage(promptToUse, {
+          size: '1024x1024',
+          quality: 'standard',
+          style: 'natural'
+        });
+        
+        // Get natural dimensions of the generated image
+        const dimensions = await getImageDimensions(generatedImageSrc);
+        
+        // Update src, seed, and natural dimensions
+        onUpdate({ 
+          src: generatedImageSrc, 
+          seed: usedSeed,
+          naturalWidth: dimensions.width,
+          naturalHeight: dimensions.height
+        });
       } catch (error) {
         console.error('Error generating image:', error);
         alert('Failed to generate image. Please try again.');
@@ -811,17 +857,32 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
       
       setIsGeneratingImage(true);
       try {
-        const generatedImageSrc = await generateImage(
-          imageLayer.prompt,
-          undefined,
-          'business_presentation',
-          0,
-          [],
-          undefined,
-          undefined,
-          imageLayer.seed
-        );
-        onUpdate({ src: generatedImageSrc });
+        // 🎯 Context Intelligence Engine Enhanced Prompt Usage (Regenerate with seed)
+        let promptToUse = imageLayer.prompt;
+        
+        // スライドメタデータからContext Intelligence Engineの拡張プロンプトを取得
+        if (slide && slide.metadata && slide.metadata.imagePrompt) {
+          console.log('🎭 Using Context Intelligence Engine enhanced image prompt for regeneration!');
+          console.log('📝 Enhanced prompt length:', slide.metadata.imagePrompt.length);
+          promptToUse = slide.metadata.imagePrompt;
+        } else {
+          console.log('⚠️ No enhanced image prompt found for regeneration, using basic prompt:', promptToUse);
+        }
+        
+        const generatedImageSrc = await generateSlideImage(promptToUse, {
+          size: '1024x1024',
+          quality: 'standard',
+          style: 'natural'
+        });
+        
+        // Get natural dimensions of the generated image
+        const dimensions = await getImageDimensions(generatedImageSrc);
+        
+        onUpdate({ 
+          src: generatedImageSrc,
+          naturalWidth: dimensions.width,
+          naturalHeight: dimensions.height
+        });
       } catch (error) {
         console.error('Error regenerating image:', error);
         alert('Failed to regenerate image. Please try again.');
@@ -1000,6 +1061,127 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
   // Shape Layer Controls
   // =================================================================
 
+  const renderSVGControls = () => {
+    const svgLayer = layer as SVGLayer;
+    
+    return (
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">SVG Content</label>
+          <div className="relative">
+            <textarea
+              value={svgLayer.content}
+              onChange={(e) => onUpdate({ content: e.target.value })}
+              className="w-full px-3 py-2 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-sm resize-none font-mono"
+              rows={6}
+              placeholder="<svg viewBox='0 0 100 100'>...</svg>"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">AI Prompt</label>
+          <input
+            type="text"
+            value={svgLayer.prompt}
+            onChange={(e) => onUpdate({ prompt: e.target.value })}
+            className="w-full px-3 py-2 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-sm"
+            placeholder="Describe the SVG you want to generate"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">ViewBox</label>
+          <input
+            type="text"
+            value={svgLayer.viewBox || ''}
+            onChange={(e) => onUpdate({ viewBox: e.target.value })}
+            className="w-full px-3 py-2 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-sm font-mono"
+            placeholder="0 0 100 100"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-3">
+          <div>
+            <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Fill Color Override</label>
+            <div className="flex gap-2 items-center">
+              <input
+                type="color"
+                value={svgLayer.fillColor || '#3b82f6'}
+                onChange={(e) => onUpdate({ fillColor: e.target.value })}
+                className="w-10 h-8 rounded border border-slate-300 dark:border-slate-700"
+              />
+              <input
+                type="text"
+                value={svgLayer.fillColor || ''}
+                onChange={(e) => onUpdate({ fillColor: e.target.value })}
+                className="flex-1 px-3 py-2 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-sm"
+                placeholder="#3b82f6"
+              />
+              <button
+                onClick={() => onUpdate({ fillColor: '' })}
+                className="px-2 py-2 bg-slate-200 dark:bg-slate-700 rounded text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600 text-xs"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Stroke Color Override</label>
+            <div className="flex gap-2 items-center">
+              <input
+                type="color"
+                value={svgLayer.strokeColor || '#000000'}
+                onChange={(e) => onUpdate({ strokeColor: e.target.value })}
+                className="w-10 h-8 rounded border border-slate-300 dark:border-slate-700"
+              />
+              <input
+                type="text"
+                value={svgLayer.strokeColor || ''}
+                onChange={(e) => onUpdate({ strokeColor: e.target.value })}
+                className="flex-1 px-3 py-2 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-sm"
+                placeholder="#000000"
+              />
+              <button
+                onClick={() => onUpdate({ strokeColor: '' })}
+                className="px-2 py-2 bg-slate-200 dark:bg-slate-700 rounded text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600 text-xs"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Stroke Width Override</label>
+            <input
+              type="number"
+              value={svgLayer.strokeWidth || ''}
+              onChange={(e) => onUpdate({ strokeWidth: e.target.value ? parseFloat(e.target.value) : undefined })}
+              className="w-full px-3 py-2 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-sm"
+              placeholder="1.0"
+              min="0"
+              step="0.1"
+            />
+          </div>
+        </div>
+
+        <div className="pt-2">
+          <button
+            onClick={() => {
+              // AI SVG regeneration could be implemented here
+              console.log('Regenerate SVG with AI:', svgLayer.prompt);
+            }}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-slate-900 dark:text-white rounded-lg hover:bg-orange-700 transition-colors"
+          >
+            <Sparkles size={16} />
+            Regenerate with AI
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const renderShapeControls = () => {
     const shapeLayer = layer as ShapeLayer;
     
@@ -1131,6 +1313,7 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
               {layer.type === 'text' && <Type size={16} className="text-blue-400" />}
               {layer.type === 'image' && <Image size={16} className="text-green-400" />}
               {layer.type === 'shape' && <Square size={16} className="text-purple-400" />}
+              {layer.type === 'svg' && <Codepen size={16} className="text-orange-400" />}
             </div>
             <div>
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Layer Editor</h3>
@@ -1192,6 +1375,7 @@ const LayerEditor: React.FC<LayerEditorProps> = ({
         {layer.type === 'text' && renderTextControls()}
         {layer.type === 'image' && renderImageControls()}
         {layer.type === 'shape' && renderShapeControls()}
+        {layer.type === 'svg' && renderSVGControls()}
 
         {/* Divider */}
         <div className="border-t border-slate-200 dark:border-slate-700 my-6"></div>

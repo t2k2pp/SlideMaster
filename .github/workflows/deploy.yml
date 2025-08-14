@@ -34,7 +34,7 @@ jobs:
       - name: Build application
         run: npm run build
         env:
-          VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
+          # Azure OpenAI environment variables can be added here when needed
           
       - name: Setup Pages
         uses: actions/configure-pages@v4

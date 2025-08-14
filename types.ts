@@ -79,7 +79,7 @@ export interface TextStyle {
   style: React.CSSProperties;
 }
 
-export type LayerType = 'text' | 'image' | 'shape';
+export type LayerType = 'text' | 'image' | 'shape' | 'svg';
 
 export interface BaseLayer {
   id: string;
@@ -124,7 +124,18 @@ export interface ShapeLayer extends BaseLayer {
   strokeWidth: number;
 }
 
-export type Layer = TextLayer | ImageLayer | ShapeLayer;
+export interface SVGLayer extends BaseLayer {
+  type: 'svg';
+  content: string; // SVG content as string
+  prompt: string; // AI generation prompt for SVG
+  viewBox?: string; // SVG viewBox attribute (e.g., "0 0 100 100")
+  preserveAspectRatio?: string; // SVG preserveAspectRatio attribute
+  fillColor?: string; // Override fill color
+  strokeColor?: string; // Override stroke color
+  strokeWidth?: number; // Override stroke width
+}
+
+export type Layer = TextLayer | ImageLayer | ShapeLayer | SVGLayer;
 
 // =================================================================
 // Slide System (enhanced from ai-slide-generator)
@@ -240,7 +251,7 @@ export interface AIInteractionHistoryItem {
   timestamp: Date;          // 実行日時
   
   // プロバイダー情報
-  provider: string;         // AIプロバイダー（gemini, azure, openai, etc）
+  provider: string;         // AIプロバイダー（azure）
   model: string;            // 使用モデル
   
   // 入出力データ
@@ -355,7 +366,6 @@ export interface SlideGenerationRequest {
   autoSlideCount: boolean;
   slideCountMode?: 'exact' | 'max' | 'min' | 'around'; // 指定ページ、指定ページ以内、指定ページ以上、指定ページ前後
   theme: PresentationTheme;
-  purpose: PresentationPurpose;
   designer?: DesignerType; // Layout strategy designer
   aspectRatio: '16:9' | '4:3' | '1:1' | '9:16' | '3:4';
   includeImages: boolean;
@@ -444,30 +454,12 @@ export interface ExportResult {
 
 export type AppTheme = 'light' | 'dark' | 'auto';
 
-// AI Model Types
-export type TextGenerationModel = 
-  | 'gemini-2.5-pro'
-  | 'gemini-2.5-flash'
-  | 'gemini-2.5-flash-lite'
-  | 'gemini-2.0-flash'
-  | 'gemini-2.0-flash-lite'
-  | 'gemini-1.5-pro-latest'
-  | 'gemini-1.5-flash-latest'
-  | 'gemma-3-27b-it'
-  | 'gemma-3-12b-it'
-  | 'gemma-3-4b-it'
-  | 'gemma-3n-e4b'
-  | 'gemma-3n-e2b';
+// AI Model Types - Azure OpenAI専用
+export type TextGenerationModel = string; // Azure deployment names
 
-export type ImageGenerationModel = 
-  | 'imagen-4'
-  | 'imagen-3';
+export type ImageGenerationModel = string; // Azure deployment names
 
-export type VideoAnalysisModel = 
-  | 'gemini-2.5-pro'
-  | 'gemini-2.5-flash'
-  | 'gemini-1.5-pro-latest'
-  | 'gemini-1.5-flash-latest';
+export type VideoAnalysisModel = string; // Azure deployment names
 
 export interface AIModelSettings {
   textGeneration: TextGenerationModel;

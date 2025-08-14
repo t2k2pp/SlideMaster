@@ -1,0 +1,158 @@
+# =================================================================
+# Context Intelligence Engine - AI分析プロンプトリソース
+# 
+# 目的: AIによる完全分析でキーワードマッチング排除
+# 原則: 
+#   - 生成AIの理解能力を最大活用
+#   - ルールベース判定を完全排除  
+#   - コンテクストベース判定に切り替え
+# =================================================================
+
+# コンテンツタイプ分析プロンプト
+contentTypeAnalysis:
+  systemPrompt: |
+    あなたは優秀なコンテンツ分類エキスパートです。
+    以下のリクエストを分析し、最適なカテゴリを判定してください。
+
+  categories:
+    story: 
+      description: "物語・ストーリー・童話・民話"
+      examples:
+        - "桃太郎の話を作成して"
+        - "感動する体験談を書いて" 
+        - "冒険物語を作って"
+    
+    technical:
+      description: "技術・IT・AI・エンジニアリング関連の説明・調査"  
+      examples:
+        - "GPT-5について調べて"
+        - "プログラミングの仕組みを説明"
+        - "AIの技術解説"
+    
+    business:
+      description: "ビジネス・経営・研修・マーケティング・企業関連"
+      examples:
+        - "営業戦略の提案"
+        - "クリティカルシンキング研修資料"
+        - "売上分析レポート"
+        - "リーダーシップ研修"
+    
+    academic:
+      description: "学術・研究・教育・実用的指導・料理レシピ"
+      examples:
+        - "環境問題の調査"
+        - "歴史の解説"
+        - "プランクのやり方"
+        - "料理の作り方"
+        - "チャーシューレシピ"
+        - "使い方ガイド"
+      specialRules:
+        - "「やり方」「方法」「手順」「料理」「レシピ」の実用解説は全てacademic（実践教育）"
+    
+    creative:
+      description: "芸術・デザイン・創作活動・表現"
+      examples:
+        - "アート作品の紹介"
+        - "デザインコンセプト"
+        - "創作活動の発表"
+
+  classificationHints:
+    business: "クリティカルシンキング、リーダーシップ、人材育成、プレゼンテーション"
+    technical: "GPT、AI、プログラミング、システム、API"
+    story: "桃太郎、童話、ストーリー、体験談"
+    academic: "環境、歴史、科学、理論"
+    cooking: "チャーシュー、レシピ、調理、食材、作り方、料理法 → academic（料理教育として）"
+
+  responseFormat: |
+    回答形式: カテゴリ名のみを英語で回答（story, technical, business, academic, creative のいずれか）
+
+# デザイナー選択プロンプト  
+designerSelection:
+  systemPrompt: |
+    コンテンツタイプ"{contentType}"の以下のトピックに最適なデザイナーを選択してください。
+
+  designers:
+    emotionalStoryteller:
+      name: "The Emotional Storyteller"
+      description: "物語・感動系"
+      suitableFor: ["story", "emotional_content"]
+    
+    corporateStrategist:
+      name: "The Corporate Strategist"  
+      description: "ビジネス・企業系"
+      suitableFor: ["business", "corporate_content"]
+    
+    logical:
+      name: "logical"
+      description: "技術・論理的・AI系"
+      suitableFor: ["technical", "engineering_content"]
+    
+    academicVisualizer:
+      name: "The Academic Visualizer"
+      description: "学術・教育系（理論・研究）"
+      suitableFor: ["academic", "research_content"]
+      
+    amateur:
+      name: "amateur"
+      description: "実用指導・料理・家庭的な内容"  
+      suitableFor: ["academic", "practical_content", "cooking", "tutorial"]
+    
+    creative:
+      name: "creative"
+      description: "芸術・創作系"
+      suitableFor: ["creative", "artistic_content"]
+
+  responseFormat: |
+    回答形式: デザイナー名のみを英語で回答（例: logical）
+
+# 統合分析プロンプト
+unifiedAnalysis:
+  systemPrompt: |
+    トピック: "{topic}"
+    
+    以下を1回で分析し、厳密なJSON形式で回答してください。
+    
+    分析対象項目: {autoItems}
+
+  analysisStructure:
+    contentAnalysis:
+      contentType: "story|business|academic|creative|technical" 
+      note: "料理・レシピ・チャーシューなどの実用ガイドはacademicとして分類する"
+      isStoryContent: "true/false"
+      confidence: "0.0-1.0の数値"
+      reasoning: "判定理由"
+    
+    designerSelection:
+      selectedDesigner: "The Academic Visualizer|The Corporate Strategist|The Emotional Storyteller|amateur|creative"
+      reason: "選択理由" 
+      confidence: "0.0-1.0の数値"
+    
+    purposeSelection:
+      selectedPurpose: "教育・学習支援|ビジネス・営業プレゼンテーション|ストーリーテリング・物語の共有|研修・トレーニング資料|レポート・報告書|その他"
+      reason: "選択理由"
+      confidence: "0.0-1.0の数値"
+      
+    themeSelection:
+      selectedTheme: "academic|professional|creative|storytelling|minimalist|vibrant"
+      reason: "選択理由"
+      confidence: "0.0-1.0の数値"
+      
+    additionalSettings:
+      suggestedSlideCount: "推奨スライド数(5-20)"
+      needsPageNumbers: "true/false"
+      imageConsistencyLevel: "low|medium|high"
+      reasoning: "設定理由"
+
+  judgmentCriteria:
+    story: "物語系（桃太郎、昔話、童話、紙芝居など）→ story + Emotional Storyteller + storytelling"
+    business: "ビジネス系（戦略、分析、ROI、研修など）→ business + Corporate Strategist + professional"
+    academic: "学術系（研究、理論、科学分析など）→ academic + Academic Visualizer + academic"  
+    cooking: "料理系（チャーシュー、レシピ、料理、調理、作り方など）→ academic + amateur + academic"
+    creative: "創作系（アート、デザイン、創造など）→ creative + creative + creative"
+    technical: "技術系（AI、プログラミング、システム、IT）→ technical + Academic Visualizer + professional"
+    
+  criticalRule: |
+    ⚠️重要：料理・レシピ・チャーシューは必ずacademicとして分類すること
+
+  responseFormat: |
+    必ずJSON形式のみで回答し、説明文は含めないでください。

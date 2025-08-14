@@ -14,6 +14,7 @@ import {
   PresentationTheme,
   AppSettings
 } from './types';
+import { EnhancedSlideRequest } from './services/ai/aiServiceInterface';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { 
   DEFAULT_PRESENTATION_SETTINGS, 
@@ -23,7 +24,7 @@ import {
   THEME_CONFIGS
 } from './constants';
 
-// Import components (to be created)
+// Import components
 import Header from './components/Header';
 import SlideNavigator from './components/SlideNavigator';
 import SlideCanvas from './components/SlideCanvas';
@@ -35,14 +36,14 @@ import { SettingsScreen } from './components/SettingsScreen';
 import SlideShow from './components/SlideShow';
 import PageNumberManager from './components/PageNumberManager';
 import VersionInfo from './components/VersionInfo';
-import MultiProviderApiKeyManager from './components/MultiProviderApiKeyManager';
-import { AIProviderType } from './services/ai/aiProviderInterface';
 
-// Import services (to be created)
-import * as geminiService from './services/geminiService';
-import * as storageService from './services/storageService';
+// Import services - Azure OpenAI専用
+import * as storageService from './services/unifiedStorageService';
 import * as exportService from './services/exportService';
-import * as aiServiceIntegration from './services/ai/aiServiceIntegration';
+import { generateSlideContent, generateSlideImage, hasValidAPIKey } from './services/ai/unifiedAIService';
+import { ImageGenerationQueue, ImageGenerationTask } from './services/ai/imageGenerationQueue';
+import { slideGenerationFactory } from './services/ai/SlideGenerationFactory';
+import { processPresentationTopic } from './services/ai/PresentationTopicProcessor';
 
 // Import utilities
 import { updateAllPageNumbers } from './utils/pageNumbers';
@@ -90,84 +91,9 @@ const App: React.FC = () => {
   });
 
   // Screen management state
-  const [currentScreen, setCurrentScreen] = useState<'welcome' | 'editor' | 'settings' | 'slideshow' | 'apikey'>('welcome');
-
-  // Debug currentScreen state changes
-  useEffect(() => {
-    console.log('currentScreen changed to:', currentScreen);
-    // showWelcomeをcurrentScreenと同期
-    setShowWelcome(currentScreen === 'welcome');
-  }, [currentScreen]);
-
-  // Load API key settings function
-  const loadApiKeySettings = useCallback(() => {
-    console.log('Loading API key settings from localStorage...');
-    try {
-      const savedSettings = localStorage.getItem('slidemaster_api_settings');
-      console.log('loadApiKeySettings - raw localStorage data:', savedSettings);
-      
-      if (savedSettings) {
-        const settings = JSON.parse(savedSettings);
-        console.log('loadApiKeySettings - parsed settings:', settings);
-        console.log('loadApiKeySettings - setting apiKeySettings to:', settings);
-        
-        setApiKeySettings(settings);  // 完全に置き換える
-        
-        // Apply settings directly with the loaded settings
-        try {
-          if (settings.geminiApiKey) {
-            console.log('loadApiKeySettings - setting Gemini API key');
-            geminiService.setApiKey(settings.geminiApiKey);
-          }
-        } catch (error) {
-          console.error('Failed to apply AI settings on startup:', error);
-        }
-      } else {
-        console.log('loadApiKeySettings - no saved settings found');
-        
-        // Check for old format API key migration
-        const oldApiKey = localStorage.getItem('slidemaster_user_api_key');
-        if (oldApiKey) {
-          console.log('loadApiKeySettings - migrating old API key:', oldApiKey);
-          const migratedSettings = {
-            geminiApiKey: oldApiKey,
-            azureApiKey: '',
-            azureEndpoint: '',
-            openaiApiKey: '',
-            claudeApiKey: '',
-            lmStudioEndpoint: 'http://localhost:1234',
-            fooucusEndpoint: 'http://localhost:7865',
-          };
-          setApiKeySettings(migratedSettings);
-          localStorage.setItem('slidemaster_api_settings', JSON.stringify(migratedSettings));
-          geminiService.setApiKey(oldApiKey);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load API key settings:', error);
-    }
-  }, []); // 依存配列を空にして無限ループを防ぐ
-
-  // Load recent presentations and API settings on startup
-  useEffect(() => {
-    const loadRecentPresentations = async () => {
-      try {
-        const presentations = await storageService.listPresentations();
-        setAppState(prev => ({
-          ...prev,
-          recentPresentations: presentations.slice(0, 5), // Show only 5 most recent
-        }));
-      } catch (error) {
-        console.error('Failed to load recent presentations:', error);
-      }
-    };
-
-    loadRecentPresentations();
-    loadApiKeySettings();
-  }, []);
-
-
-  const [showWelcome, setShowWelcome] = useState(true);
+  const [currentScreen, setCurrentScreen] = useState<'welcome' | 'editor' | 'settings' | 'slideshow'>('welcome');
+  const [previousScreen, setPreviousScreen] = useState<'welcome' | 'editor'>('welcome');
+  
   const [showAIAssistant, setShowAIAssistant] = useState(false);
   const [showExportManager, setShowExportManager] = useState(false);
   
@@ -182,172 +108,32 @@ const App: React.FC = () => {
   const [slideShowStartIndex, setSlideShowStartIndex] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Multi-provider API key management
-  const [showMultiProviderApiKeyManager, setShowMultiProviderApiKeyManager] = useState(false);
-  const [apiKeySettings, setApiKeySettings] = useState({
-    geminiApiKey: '',
-    azureApiKey: '',
-    azureEndpoint: '',
-    openaiApiKey: '',
-    claudeApiKey: '',
-    lmStudioEndpoint: 'http://localhost:1234',
-    fooucusEndpoint: 'http://localhost:7865',
-  });
-
-  // Apply API settings to AI services
-  const applyAISettings = useCallback(() => {
-    try {
-      // For now, primarily configure Gemini (the main provider)
-      if (apiKeySettings.geminiApiKey) {
-        geminiService.setApiKey(apiKeySettings.geminiApiKey);
-      }
-      
-      // Future: Configure other providers as they become available
-      // TODO: Implement multi-provider configuration when AI factory is ready
-      
-    } catch (error) {
-      console.error('Failed to apply AI settings:', error);
-    }
-  }, [apiKeySettings]);
-
-  // Multi-provider API key management
-  const handleMultiProviderApiKeyUpdate = useCallback((provider: AIProviderType, apiKey: string, additionalConfig?: any) => {
-    console.log('🔄 handleMultiProviderApiKeyUpdate called:', { provider, apiKey, additionalConfig });
-    console.log('📋 Current apiKeySettings before update:', apiKeySettings);
-    
-    const newSettings = { ...apiKeySettings };
-    
-    switch (provider) {
-      case 'gemini':
-        console.log('🎯 Setting gemini API key:', apiKey);
-        newSettings.geminiApiKey = apiKey;
-        break;
-      case 'azure':
-        console.log('🎯 Setting azure API key:', apiKey);
-        newSettings.azureApiKey = apiKey;
-        if (additionalConfig?.azureEndpoint) {
-          newSettings.azureEndpoint = additionalConfig.azureEndpoint;
-        }
-        break;
-      case 'openai':
-        console.log('🎯 Setting openai API key:', apiKey);
-        newSettings.openaiApiKey = apiKey;
-        break;
-      case 'claude':
-        console.log('🎯 Setting claude API key:', apiKey);
-        newSettings.claudeApiKey = apiKey;
-        break;
-      case 'lmstudio':
-        if (additionalConfig?.lmStudioEndpoint) {
-          newSettings.lmStudioEndpoint = additionalConfig.lmStudioEndpoint;
-        }
-        break;
-      case 'fooocus':
-        if (additionalConfig?.fooucusEndpoint) {
-          newSettings.fooucusEndpoint = additionalConfig.fooucusEndpoint;
-        }
-        break;
-    }
-    
-    console.log('📊 New settings after update:', newSettings);
-    setApiKeySettings(newSettings);
-    
-    // Save to localStorage with enhanced error handling
-    try {
-      console.log('💾 Saving API key settings to localStorage:', newSettings);
-      
-      // 空文字列のAPIキーの場合、localStorageから完全に削除
-      const cleanSettings = { ...newSettings };
-      Object.keys(cleanSettings).forEach(key => {
-        if (typeof cleanSettings[key] === 'string' && cleanSettings[key].trim() === '') {
-          if (key.includes('Endpoint')) {
-            // エンドポイントはデフォルト値に戻す
-            if (key === 'lmStudioEndpoint') cleanSettings[key] = 'http://localhost:1234';
-            if (key === 'fooucusEndpoint') cleanSettings[key] = 'http://localhost:7865';
-          }
-          // APIキーの場合は空文字列のまま保持（削除しない）
-        }
-      });
-      
-      // 強制的にlocalStorageをクリアしてから書き込み
-      localStorage.removeItem('slidemaster_api_settings');
-      localStorage.setItem('slidemaster_api_settings', JSON.stringify(cleanSettings));
-      
-      console.log('✅ API key settings saved successfully to localStorage');
-      
-      // 即座に保存されたかを確認
-      const saved = localStorage.getItem('slidemaster_api_settings');
-      console.log('🔍 Verification - what was actually saved:', saved);
-      
-      // 保存が成功しているかダブルチェック
-      if (saved) {
-        const parsedSaved = JSON.parse(saved);
-        console.log('🔍 Parsed verification:', parsedSaved);
-        
-        if (JSON.stringify(cleanSettings) === saved) {
-          console.log('✅ localStorage save verification successful');
-        } else {
-          console.warn('⚠️ localStorage save verification failed - content mismatch');
-        }
-      } else {
-        console.error('❌ localStorage save verification failed - no data found');
-      }
-      
-      toast.success('APIキー設定が保存されました');
-    } catch (error) {
-      console.error('❌ Failed to save API key settings:', error);
-      toast.error('APIキー設定の保存に失敗しました');
-    }
-  }, [apiKeySettings]);
-
-  // Check if any AI features are available (primarily Gemini for now)
-  const isAIAvailable = useMemo(() => {
-    // 空文字列チェックを含む関数
-    const hasValidKey = (key: string) => key && key.trim().length > 0;
-    const hasValidEndpoint = (endpoint: string, defaultValue: string) => 
-      endpoint && endpoint.trim() !== defaultValue.trim();
-    
-    // 状態ベースのチェック（空文字列も考慮）
-    const stateBasedAvailable = hasValidKey(apiKeySettings.geminiApiKey) || 
-                               hasValidKey(apiKeySettings.azureApiKey) || 
-                               hasValidKey(apiKeySettings.openaiApiKey) || 
-                               hasValidKey(apiKeySettings.claudeApiKey) ||
-                               hasValidEndpoint(apiKeySettings.lmStudioEndpoint, 'http://localhost:1234') ||
-                               hasValidEndpoint(apiKeySettings.fooucusEndpoint, 'http://localhost:7865');
-    
-    // Debug logging
-    console.log('apiKeySettings:', apiKeySettings);
-    console.log('geminiApiKey check:', hasValidKey(apiKeySettings.geminiApiKey), 'value:', apiKeySettings.geminiApiKey);
-    console.log('azureApiKey check:', hasValidKey(apiKeySettings.azureApiKey), 'value:', apiKeySettings.azureApiKey);
-    console.log('openaiApiKey check:', hasValidKey(apiKeySettings.openaiApiKey), 'value:', apiKeySettings.openaiApiKey);
-    console.log('claudeApiKey check:', hasValidKey(apiKeySettings.claudeApiKey), 'value:', apiKeySettings.claudeApiKey);
-    console.log('stateBasedAvailable:', stateBasedAvailable);
-    console.log('final isAIAvailable:', stateBasedAvailable);
-    
-    return stateBasedAvailable;
-  }, [apiKeySettings]);
-
-  const requireAIFeature = useCallback(() => {
-    // Double-check API key availability with more detailed logging
-    console.log('requireAIFeature called');
-    console.log('isAIAvailable:', isAIAvailable);
-    console.log('Current apiKeySettings:', apiKeySettings);
-    
-    if (!isAIAvailable) {
-      console.log('No API key available, showing setup dialog');
-      toast.error('AI機能を使用するにはAPIキーの設定が必要です');
-      setShowMultiProviderApiKeyManager(true);
-      return false;
-    }
-    
-    console.log('API key available, proceeding with AI features');
-    return true;
-  }, [isAIAvailable, apiKeySettings]);
-
-  // Apply API settings whenever apiKeySettings changes
+  // Load recent presentations on startup
   useEffect(() => {
-    applyAISettings();
-  }, [applyAISettings]);
+    const initializeAppStorage = async () => {
+      try {
+        // Initialize IndexedDB storage system
+        console.log('🚀 Initializing storage systems...');
+        
+        // Initialize the unified storage service (this will set up IndexedDB and migration)
+        const presentations = await storageService.listPresentations();
+        
+        setAppState(prev => ({
+          ...prev,
+          recentPresentations: presentations.slice(0, 5),
+        }));
+        
+        console.log('✅ Storage systems initialized successfully');
+        toast.success('Storage systems ready', { id: 'storage-init' });
+        
+      } catch (error) {
+        console.error('Failed to initialize storage systems:', error);
+        toast.error('Failed to initialize storage', { id: 'storage-init' });
+      }
+    };
+
+    initializeAppStorage();
+  }, []);
 
   // =================================================================
   // Derived State
@@ -358,6 +144,11 @@ const App: React.FC = () => {
     layer.id === appState.canvasState.viewState.selectedLayerId
   );
 
+  // Check if Azure OpenAI is available
+  const isAIAvailable = useMemo(() => {
+    return hasValidAPIKey();
+  }, []);
+
   // =================================================================
   // Undo/Redo Helper Functions
   // =================================================================
@@ -365,7 +156,7 @@ const App: React.FC = () => {
   const saveStateForUndo = useCallback(() => {
     if (appState.currentPresentation) {
       setUndoState(JSON.parse(JSON.stringify(appState.currentPresentation)));
-      setRedoState(null); // Clear redo when new action is performed
+      setRedoState(null);
     }
   }, [appState.currentPresentation]);
   
@@ -383,8 +174,44 @@ const App: React.FC = () => {
     }
   }, [selectedLayer]);
   
-  
-  
+  const pasteLayer = useCallback(() => {
+    if (clipboardLayer && currentSlide) {
+      saveStateForUndo();
+      const newLayer = {
+        ...clipboardLayer,
+        id: `layer-${Date.now()}`,
+        x: clipboardLayer.x + 10,
+        y: clipboardLayer.y + 10,
+        zIndex: currentSlide.layers.length,
+      };
+      
+      const updatedLayers = [...currentSlide.layers, newLayer];
+      updateSlide(appState.currentSlideIndex, { layers: updatedLayers });
+      
+      setAppState(prev => ({
+        ...prev,
+        canvasState: {
+          ...prev.canvasState,
+          viewState: {
+            ...prev.canvasState.viewState,
+            selectedLayerId: newLayer.id,
+          },
+        },
+      }));
+      
+      toast.success('Layer pasted');
+    }
+  }, [clipboardLayer, currentSlide, appState.currentSlideIndex]);
+
+  const cutLayer = useCallback(() => {
+    if (selectedLayer) {
+      saveStateForUndo();
+      setClipboardLayer(JSON.parse(JSON.stringify(selectedLayer)));
+      deleteLayer(selectedLayer.id);
+      toast.success('Layer cut to clipboard');
+    }
+  }, [selectedLayer, saveStateForUndo]);
+
   // =================================================================
   // Undo/Redo Operations
   // =================================================================
@@ -444,7 +271,6 @@ const App: React.FC = () => {
       },
       createdAt: new Date(),
       updatedAt: new Date(),
-      // Version information
       version: versionMetadata.version,
       createdWith: versionMetadata.createdWith,
       lastModifiedWith: versionMetadata.lastModifiedWith,
@@ -493,21 +319,13 @@ const App: React.FC = () => {
     }
 
     try {
-      console.log('Saving presentation:', appState.currentPresentation.title);
-      
       const updatedPresentation = {
         ...appState.currentPresentation,
         updatedAt: new Date(),
       };
 
-      // Validate presentation data before saving
-      if (!updatedPresentation.id || !updatedPresentation.title) {
-        throw new Error('Invalid presentation data: missing id or title');
-      }
-
       await storageService.savePresentation(updatedPresentation);
       
-      // Update recent presentations list
       const updatedRecentPresentations = await storageService.listPresentations();
       
       setAppState(prev => ({
@@ -517,23 +335,9 @@ const App: React.FC = () => {
       }));
       
       toast.success('Presentation saved!');
-      console.log('Presentation saved successfully');
     } catch (error) {
       console.error('Error saving presentation:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      
-      if (errorMessage.includes('quota') || errorMessage.includes('storage')) {
-        toast.error('Storage full! Try cleaning up old presentations.');
-        // Automatically attempt cleanup
-        try {
-          storageService.cleanupStorage();
-          toast.success('Storage cleaned up. Please try saving again.');
-        } catch (cleanupError) {
-          console.error('Cleanup failed:', cleanupError);
-        }
-      } else {
-        toast.error(`Failed to save: ${errorMessage}`);
-      }
+      toast.error('Failed to save presentation');
     }
   }, [appState.currentPresentation]);
 
@@ -541,13 +345,9 @@ const App: React.FC = () => {
     try {
       setIsProcessing(true);
       
-      // Clean up storage before importing to make space
-      storageService.cleanupStorage();
-      
       const result = await exportService.importProject(file);
       
       if (result.success && result.presentation) {
-        // Save the imported presentation (with optimization)
         await storageService.savePresentation(result.presentation);
         
         setAppState(prev => ({
@@ -556,7 +356,6 @@ const App: React.FC = () => {
           currentSlideIndex: 0,
         }));
         
-        // Update recent presentations list
         const updatedRecentPresentations = await storageService.listPresentations();
         setAppState(prev => ({
           ...prev,
@@ -570,16 +369,7 @@ const App: React.FC = () => {
       }
     } catch (error) {
       console.error('Error importing project:', error);
-      
-      if (error instanceof Error) {
-        if (error.message.includes('quota') || error.message.includes('Storage')) {
-          toast.error('ストレージ容量が不足しています。古いプロジェクトを削除してから再度お試しください。');
-        } else {
-          toast.error(`プロジェクトのインポートに失敗しました: ${error.message}`);
-        }
-      } else {
-        toast.error('プロジェクトのインポートに失敗しました');
-      }
+      toast.error('プロジェクトのインポートに失敗しました');
     } finally {
       setIsProcessing(false);
     }
@@ -607,7 +397,6 @@ const App: React.FC = () => {
     const newSlides = [...appState.currentPresentation.slides];
     newSlides.splice(insertIndex, 0, newSlide);
 
-    // Update page numbers after adding slide
     const slidesWithUpdatedPageNumbers = updateAllPageNumbers(
       newSlides, 
       appState.currentPresentation.settings.pageNumbers,
@@ -634,7 +423,6 @@ const App: React.FC = () => {
         ? appState.currentSlideIndex - 1 
         : appState.currentSlideIndex;
 
-    // Update page numbers after deleting slide
     const slidesWithUpdatedPageNumbers = updateAllPageNumbers(
       newSlides, 
       appState.currentPresentation.settings.pageNumbers,
@@ -657,7 +445,6 @@ const App: React.FC = () => {
     const newSlides = [...appState.currentPresentation.slides];
     newSlides.splice(index, 0, duplicatedSlide);
 
-    // Update page numbers after adding duplicated slide
     const slidesWithUpdatedPageNumbers = updateAllPageNumbers(
       newSlides, 
       appState.currentPresentation.settings.pageNumbers,
@@ -681,7 +468,6 @@ const App: React.FC = () => {
     const [movedSlide] = newSlides.splice(fromIndex, 1);
     newSlides.splice(toIndex, 0, movedSlide);
 
-    // Update page numbers after reordering
     const slidesWithUpdatedPageNumbers = updateAllPageNumbers(
       newSlides, 
       appState.currentPresentation.settings.pageNumbers,
@@ -715,40 +501,6 @@ const App: React.FC = () => {
   }, [appState.currentPresentation]);
 
   // =================================================================
-  // Clipboard Operations (continued)
-  // =================================================================
-  
-  const pasteLayer = useCallback(() => {
-    if (clipboardLayer && currentSlide) {
-      saveStateForUndo();
-      const newLayer = {
-        ...clipboardLayer,
-        id: `layer-${Date.now()}`,
-        x: clipboardLayer.x + 10, // Offset pasted layer
-        y: clipboardLayer.y + 10,
-        zIndex: currentSlide.layers.length,
-      };
-      
-      const updatedLayers = [...currentSlide.layers, newLayer];
-      updateSlide(appState.currentSlideIndex, { layers: updatedLayers });
-      
-      // Select the new layer
-      setAppState(prev => ({
-        ...prev,
-        canvasState: {
-          ...prev.canvasState,
-          viewState: {
-            ...prev.canvasState.viewState,
-            selectedLayerId: newLayer.id,
-          },
-        },
-      }));
-      
-      toast.success('Layer pasted');
-    }
-  }, [clipboardLayer, currentSlide, saveStateForUndo, appState.currentSlideIndex, updateSlide]);
-
-  // =================================================================
   // Layer Management
   // =================================================================
 
@@ -766,7 +518,6 @@ const App: React.FC = () => {
     const updatedLayers = [...currentSlide.layers, newLayer];
     updateSlide(appState.currentSlideIndex, { layers: updatedLayers });
 
-    // Select the new layer
     setAppState(prev => ({
       ...prev,
       canvasState: {
@@ -782,7 +533,6 @@ const App: React.FC = () => {
   const updateLayer = useCallback((layerId: string, updates: Partial<Layer>) => {
     if (!currentSlide) return;
 
-    // Don't save state for minor updates like position changes during drag
     const isMajorUpdate = updates.hasOwnProperty('content') || 
                          updates.hasOwnProperty('src') || 
                          updates.hasOwnProperty('fontSize') ||
@@ -807,7 +557,6 @@ const App: React.FC = () => {
     const updatedLayers = currentSlide.layers.filter(layer => layer.id !== layerId);
     updateSlide(appState.currentSlideIndex, { layers: updatedLayers });
 
-    // Clear selection if deleted layer was selected
     if (appState.canvasState.viewState.selectedLayerId === layerId) {
       setAppState(prev => ({
         ...prev,
@@ -821,15 +570,6 @@ const App: React.FC = () => {
       }));
     }
   }, [currentSlide, appState.currentSlideIndex, updateSlide, appState.canvasState.viewState.selectedLayerId, saveStateForUndo]);
-
-  const cutLayer = useCallback(() => {
-    if (selectedLayer) {
-      saveStateForUndo();
-      setClipboardLayer(JSON.parse(JSON.stringify(selectedLayer)));
-      deleteLayer(selectedLayer.id);
-      toast.success('Layer cut to clipboard');
-    }
-  }, [selectedLayer, saveStateForUndo, deleteLayer]);
 
   const selectLayer = useCallback((layerId: string | null) => {
     setAppState(prev => ({
@@ -858,51 +598,150 @@ const App: React.FC = () => {
   }, []);
 
   // =================================================================
-  // AI Integration
+  // AI Integration - Azure OpenAI専用
   // =================================================================
 
   const generateSlides = useCallback(async (request: SlideGenerationRequest) => {
-    if (!requireAIFeature()) return;
+    if (!isAIAvailable) {
+      toast.error('Azure OpenAI APIキーが設定されていません');
+      return;
+    }
     
     try {
       setIsProcessing(true);
       
-      // For now, use Gemini if available, otherwise show error
-      if (apiKeySettings.geminiApiKey) {
-        const presentation = await geminiService.generatePresentation(request, apiKeySettings.geminiApiKey);
-        
-        setAppState(prev => ({
-          ...prev,
-          currentPresentation: presentation,
-          currentSlideIndex: 0,
-        }));
-        
-        setCurrentScreen('editor');
-        toast.success('Slides generated successfully!');
-      } else {
-        // TODO: Use other providers when available
-        toast.error('Gemini APIキーが設定されていません。設定画面でAPIキーを設定してください。');
+      // 🎯 トピック前処理：少量文章展開・大量文章構造化
+      console.log('🔍 Processing presentation topic...', request.topic);
+      const topicAnalysis = await processPresentationTopic(request.topic);
+      
+      console.log('✅ Topic processing completed:', {
+        contentType: topicAnalysis.contentType,
+        processingApplied: topicAnalysis.processingApplied,
+        originalLength: topicAnalysis.userInputTopic.length,
+        processedLength: topicAnalysis.contextAnalysisText.length
+      });
+      
+      // SlideGenerationRequestをEnhancedSlideRequestに変換
+      const enhancedRequest: EnhancedSlideRequest = {
+        topic: topicAnalysis.userInputTopic, // 元のトピックを使用（分析テキストではなく）
+        slideCount: request.slideCount,
+        slideCountMode: request.slideCountMode || 'fixed',
+        selectedDesigner: request.designer || request.selectedDesigner || undefined, // Context Intelligence Engineに任せる
+        purpose: request.purpose || 'auto', // 'auto'でContext Intelligence Engine発動
+        theme: request.theme || 'auto', // 'auto'でContext Intelligence Engine発動
+        includeImages: request.includeImages || false
+      };
+      
+      // スライド生成ファクトリを使用
+      const generationResult = await slideGenerationFactory.generateSlides(enhancedRequest);
+      
+      // JSON解析
+      const presentationData = JSON.parse(generationResult.content) as Partial<Presentation>;
+      if (!presentationData.slides) {
+        throw new Error('Invalid presentation structure - no slides found');
+      }
+
+      // Context Intelligence Engine メタデータ確認
+      presentationData.slides.forEach((slide, index) => {
+        if (slide.metadata?.imagePrompt) {
+          console.log(`✅ Slide ${index + 1} has enhanced image prompt (${slide.metadata.imagePrompt.length} chars)`);
+        }
+      });
+
+      // レイヤープロパティの検証・補完
+      const validatedSlides = presentationData.slides.map(slide => ({
+        ...slide,
+        layers: slide.layers?.map(layer => ({
+          ...layer,
+          // 必須プロパティの補完
+          rotation: layer.rotation || 0,
+          opacity: layer.opacity !== undefined ? layer.opacity : 1,
+          zIndex: layer.zIndex || 1,
+          // テキストレイヤーの場合
+          ...(layer.type === 'text' && {
+            textAlign: (layer as any).textAlign || 'left',
+            fontSize: (layer as any).fontSize || 24,
+            textColor: (layer as any).textColor || '#000000',
+          }),
+          // 画像レイヤーの場合
+          ...(layer.type === 'image' && {
+            src: (layer as any).src || '',
+            prompt: (layer as any).prompt || 'Professional image',
+            objectFit: (layer as any).objectFit || 'cover',
+            objectPosition: (layer as any).objectPosition || 'center-center',
+            seed: (layer as any).seed || Math.floor(Math.random() * 2147483647),
+          }),
+        })) || []
+      }));
+
+      const versionMetadata = createVersionMetadata();
+      const presentation: Presentation = {
+        id: `presentation-${Date.now()}`,
+        title: presentationData.title || `${request.topic} プレゼンテーション`,
+        description: presentationData.description || `${enhancedRequest.selectedDesigner}スタイルで生成されたプレゼンテーション`,
+        theme: 'professional',
+        slides: validatedSlides,
+        settings: presentationData.settings || DEFAULT_PRESENTATION_SETTINGS,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        // ファクトリからのメタデータを追加
+        purpose: request.purpose,
+        designerUsed: generationResult.metadata?.designerUsed,
+        generationStrategy: generationResult.metadata?.strategy,
+        ...versionMetadata,
+      };
+      
+      setAppState(prev => ({
+        ...prev,
+        currentPresentation: presentation,
+        currentSlideIndex: 0,
+      }));
+      
+      setCurrentScreen('editor');
+      toast.success(`Slides generated successfully using ${generationResult.metadata?.designerUsed || 'AI'}!`);
+
+      // 画像を自動生成（バックグラウンドで実行）
+      if (request.includeImages) {
+        generateImagesForPresentation(presentation);
       }
     } catch (error) {
       console.error('Error generating slides:', error);
-      toast.error('Failed to generate slides');
+      toast.error('Failed to generate slides: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       setIsProcessing(false);
     }
-  }, [requireAIFeature, apiKeySettings.geminiApiKey]);
+  }, [isAIAvailable]);
 
   const generateElement = useCallback(async (request: ElementGenerationRequest) => {
-    if (!requireAIFeature()) return;
+    if (!isAIAvailable) {
+      toast.error('Azure OpenAI APIキーが設定されていません');
+      return;
+    }
     
     try {
       setIsProcessing(true);
       
-      if (apiKeySettings.geminiApiKey) {
-        const element = await geminiService.generateElement(request, apiKeySettings.geminiApiKey);
-        addLayer(element);
-        toast.success('Element generated successfully!');
-      } else {
-        toast.error('Gemini APIキーが設定されていません。設定画面でAPIキーを設定してください。');
+      // Generate image with Azure OpenAI
+      if (request.type === 'image') {
+        const imageUrl = await generateSlideImage(request.prompt);
+        const newLayer = {
+          id: `image-${Date.now()}`,
+          type: 'image' as const,
+          x: 25,
+          y: 25,
+          width: 50,
+          height: 50,
+          rotation: 0,
+          opacity: 1,
+          zIndex: currentSlide?.layers.length || 0,
+          src: imageUrl,
+          prompt: request.prompt,
+          seed: Math.floor(Math.random() * 2147483647),
+          objectFit: 'contain' as const,
+          objectPosition: 'center-center' as const,
+        };
+        addLayer(newLayer);
+        toast.success('Image generated successfully!');
       }
     } catch (error) {
       console.error('Error generating element:', error);
@@ -910,101 +749,183 @@ const App: React.FC = () => {
     } finally {
       setIsProcessing(false);
     }
-  }, [requireAIFeature, apiKeySettings.geminiApiKey, addLayer]);
+  }, [isAIAvailable, addLayer, currentSlide]);
 
   const assistWithContent = useCallback(async (request: AIAssistRequest) => {
-    if (!requireAIFeature()) return;
+    if (!isAIAvailable) {
+      toast.error('Azure OpenAI APIキーが設定されていません');
+      return;
+    }
     
     try {
       setIsProcessing(true);
       
-      if (apiKeySettings.geminiApiKey) {
-        const result = await geminiService.assistWithContent(request, apiKeySettings.geminiApiKey);
-        
-        if (request.targetLayer) {
-          updateLayer(request.targetLayer, result.layerUpdates);
-        } else {
-          updateSlide(appState.currentSlideIndex, result.slideUpdates);
-        }
-        
-        toast.success('Content updated successfully!');
-      } else {
-        toast.error('Gemini APIキーが設定されていません。設定画面でAPIキーを設定してください。');
+      const response = await generateSlideContent(request.prompt);
+      
+      if (request.targetLayer && selectedLayer) {
+        updateLayer(selectedLayer.id, { content: response });
       }
+      
+      toast.success('Content updated successfully!');
     } catch (error) {
       console.error('Error with AI assist:', error);
       toast.error('Failed to assist with content');
     } finally {
       setIsProcessing(false);
     }
-  }, [requireAIFeature, apiKeySettings.geminiApiKey, updateLayer, updateSlide, appState.currentSlideIndex]);
+  }, [isAIAvailable, updateLayer, selectedLayer]);
 
   const retryFailedImages = useCallback(async (failedImageIds: string[]) => {
-    if (!requireAIFeature()) return;
-    if (!appState.currentPresentation) return;
+    if (!isAIAvailable || !appState.currentPresentation) return;
     
     try {
       setIsProcessing(true);
       
-      if (apiKeySettings.geminiApiKey) {
-        // Find failed image layers and their prompts
-        const imagesToRetry: Array<{
-          slideIndex: number;
-          layerId: string;
-          prompt: string;
-        }> = [];
-        
-        appState.currentPresentation.slides.forEach((slide, slideIndex) => {
-          slide.layers.forEach(layer => {
-            if (layer.type === 'image' && failedImageIds.includes(layer.id)) {
-              const imageLayer = layer as any; // Type assertion for prompt access
-              imagesToRetry.push({
-                slideIndex,
-                layerId: layer.id,
-                prompt: imageLayer.prompt || 'Generate image'
-              });
-            }
-          });
-        });
-        
-        toast.success(`画像の再生成を開始します... (${imagesToRetry.length}枚)`);
-        
-        // Regenerate each image
-        for (const imageInfo of imagesToRetry) {
-          try {
-            const newImageSrc = await geminiService.generateImage(
-              imageInfo.prompt,
-              undefined, // imageSettings
-              'business_presentation',
-              imageInfo.slideIndex,
-              [], // characterContext
-              undefined, // referenceImageContext
-              apiKeySettings.geminiApiKey
-            );
-            
-            // Update the layer with the new image
-            updateLayer(imageInfo.layerId, { src: newImageSrc });
-            
-          } catch (error) {
-            console.error(`Failed to regenerate image for layer ${imageInfo.layerId}:`, error);
+      const imagesToRetry: Array<{
+        slideIndex: number;
+        layerId: string;
+        prompt: string;
+      }> = [];
+      
+      appState.currentPresentation.slides.forEach((slide, slideIndex) => {
+        slide.layers.forEach(layer => {
+          if (layer.type === 'image' && failedImageIds.includes(layer.id)) {
+            const imageLayer = layer as any;
+            imagesToRetry.push({
+              slideIndex,
+              layerId: layer.id,
+              prompt: imageLayer.prompt || 'Generate image'
+            });
           }
+        });
+      });
+      
+      for (const imageInfo of imagesToRetry) {
+        try {
+          const newImageSrc = await generateSlideImage(imageInfo.prompt);
+          updateLayer(imageInfo.layerId, { src: newImageSrc });
+        } catch (error) {
+          console.error(`Failed to regenerate image for layer ${imageInfo.layerId}:`, error);
         }
-        
-        toast.success(`${imagesToRetry.length}枚の画像の再生成が完了しました！`);
-      } else {
-        toast.error('Gemini APIキーが設定されていません。設定画面でAPIキーを設定してください。');
       }
+      
+      toast.success(`${imagesToRetry.length}枚の画像の再生成が完了しました！`);
     } catch (error) {
       console.error('Error retrying failed images:', error);
       toast.error('Failed to retry failed images');
     } finally {
       setIsProcessing(false);
     }
-  }, [requireAIFeature, apiKeySettings.geminiApiKey, appState.currentPresentation, updateLayer]);
+  }, [isAIAvailable, appState.currentPresentation, updateLayer]);
 
-  // =================================================================
-  // View State Management - (Moved to layer management section)
-  // =================================================================
+  // プレゼンテーション内の画像を自動生成（並列処理対応）
+  const generateImagesForPresentation = useCallback(async (presentation: Presentation) => {
+    if (!isAIAvailable) return;
+
+    try {
+      // 画像生成が必要なレイヤーを収集
+      const imageTasks: ImageGenerationTask[] = [];
+      const layerMap = new Map<string, { slideIndex: number; layerId: string }>();
+
+      presentation.slides.forEach((slide, slideIndex) => {
+        slide.layers.forEach(layer => {
+          if (layer.type === 'image' && !layer.src && (layer as any).prompt) {
+            const taskId = `${slideIndex}-${layer.id}`;
+            const imageLayer = layer as any;
+            
+            // 🎯 Context Intelligence Engine Enhanced Prompt Usage
+            let promptToUse = imageLayer.prompt;
+            
+            // スライドメタデータからContext Intelligence Engineの拡張プロンプトを取得
+            if (slide.metadata && slide.metadata.imagePrompt) {
+              console.log(`🎭 Using enhanced image prompt for slide ${slideIndex + 1} (${slide.metadata.imagePrompt.length} chars)`);
+              promptToUse = slide.metadata.imagePrompt;
+            }
+            
+            imageTasks.push({
+              id: taskId,
+              prompt: promptToUse,
+              options: {
+                size: appState.settings?.imageGenerationSettings?.defaultSize || 'landscape',
+                quality: appState.settings?.imageGenerationSettings?.defaultQuality || 'medium',
+                style: 'natural'
+              }
+            });
+            
+            layerMap.set(taskId, { slideIndex, layerId: layer.id });
+          }
+        });
+      });
+
+      if (imageTasks.length === 0) {
+        toast.dismiss('image-gen');
+        return;
+      }
+
+      // 設定から並列数を取得
+      const concurrentLimit = appState.settings?.imageGenerationSettings?.concurrentLimit || 3;
+      
+      // 並列画像生成キューを作成
+      const queue = new ImageGenerationQueue(
+        concurrentLimit,
+        generateSlideImage,
+        (completed, total) => {
+          toast.loading(`画像生成中... ${completed}/${total}枚完了`, { id: 'image-gen' });
+        },
+        (results) => {
+          const successCount = results.filter(r => r.imageUrl).length;
+          const errorCount = results.length - successCount;
+          
+          if (successCount > 0) {
+            toast.success(`${successCount}枚の画像を生成しました！${errorCount > 0 ? ` (${errorCount}枚失敗)` : ''}`, { id: 'image-gen' });
+          } else {
+            toast.error('画像生成に失敗しました', { id: 'image-gen' });
+          }
+        }
+      );
+
+      // 並列処理開始
+      const results = await queue.processImages(imageTasks);
+
+      // 結果をプレゼンテーションに反映
+      setAppState(prev => {
+        const updatedSlides = [...prev.currentPresentation.slides];
+        
+        results.forEach((result, index) => {
+          if (result.imageUrl) {
+            const layerInfo = layerMap.get(result.id);
+            const originalTask = imageTasks.find(t => t.id === result.id);
+            
+            if (layerInfo && originalTask) {
+              const targetSlide = { ...updatedSlides[layerInfo.slideIndex] };
+              targetSlide.layers = targetSlide.layers.map(l => 
+                l.id === layerInfo.layerId ? { 
+                  ...l, 
+                  src: result.imageUrl,
+                  prompt: originalTask.prompt // 実際に使用されたpromptを保存
+                } : l
+              );
+              updatedSlides[layerInfo.slideIndex] = targetSlide;
+              
+              console.log(`✅ Image generated for slide ${layerInfo.slideIndex + 1}`);
+            }
+          }
+        });
+        
+        return {
+          ...prev,
+          currentPresentation: {
+            ...prev.currentPresentation,
+            slides: updatedSlides
+          }
+        };
+      });
+
+    } catch (error) {
+      console.error('Error generating images for presentation:', error);
+      toast.error('画像生成中にエラーが発生しました', { id: 'image-gen' });
+    }
+  }, [isAIAvailable, appState.settings?.imageGenerationSettings]);
 
   // =================================================================
   // Export Management
@@ -1016,11 +937,9 @@ const App: React.FC = () => {
     try {
       setIsProcessing(true);
       
-      // Store current state to restore later
       const originalSlideIndex = appState.currentSlideIndex;
       const originalSelectedLayerId = appState.canvasState.viewState.selectedLayerId;
       
-      // Clear layer selection for clean export (no highlights)
       setAppState(prev => ({
         ...prev,
         canvasState: {
@@ -1032,10 +951,8 @@ const App: React.FC = () => {
         },
       }));
       
-      // Wait a moment for the UI to update
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      // Create slide change callback for multi-slide exports
       const handleSlideChange = (slideIndex: number) => {
         setAppState(prev => ({ 
           ...prev, 
@@ -1044,7 +961,7 @@ const App: React.FC = () => {
             ...prev.canvasState,
             viewState: {
               ...prev.canvasState.viewState,
-              selectedLayerId: null, // Keep selection cleared during export
+              selectedLayerId: null,
             },
           },
         }));
@@ -1054,11 +971,10 @@ const App: React.FC = () => {
         appState.currentPresentation, 
         options,
         handleSlideChange,
-        undefined, // onProgress
-        originalSlideIndex // currentSlideIndex
+        undefined,
+        originalSlideIndex
       );
       
-      // Restore original state
       setAppState(prev => ({ 
         ...prev, 
         currentSlideIndex: originalSlideIndex,
@@ -1112,12 +1028,11 @@ const App: React.FC = () => {
       return;
     }
 
-    // Create a new presentation with the generated slides
     const versionMetadata = createVersionMetadata();
     const newPresentation: Presentation = {
       id: `presentation-${Date.now()}`,
       title: 'Manual Generated Presentation',
-      description: 'Generated from video manual',
+      description: 'Generated from manual input',
       theme: 'professional',
       slides: slides,
       settings: {
@@ -1126,7 +1041,6 @@ const App: React.FC = () => {
       },
       createdAt: new Date(),
       updatedAt: new Date(),
-      // Version information
       version: versionMetadata.version,
       createdWith: versionMetadata.createdWith,
       lastModifiedWith: versionMetadata.lastModifiedWith,
@@ -1142,10 +1056,6 @@ const App: React.FC = () => {
     setCurrentScreen('editor');
     toast.success(`Generated ${slides.length} slides from manual generator`);
   }, []);
-
-  // =================================================================
-  // Auto Slide Generator
-  // =================================================================
 
   const handleAutoSlidesGenerated = useCallback((presentation: Presentation) => {
     setAppState(prev => ({
@@ -1185,169 +1095,23 @@ const App: React.FC = () => {
   }, [appState.currentPresentation]);
 
   // =================================================================
-  // Keyboard Shortcuts
-  // =================================================================
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // テキスト入力中は通常のキーボード操作を許可
-      const target = e.target as HTMLElement;
-      const isTextInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.contentEditable === 'true';
-      
-      if (e.ctrlKey || e.metaKey) {
-        switch (e.key) {
-          case 's':
-            e.preventDefault();
-            savePresentation();
-            break;
-          case 'n':
-            e.preventDefault();
-            addSlide();
-            break;
-          case 'k':
-            e.preventDefault();
-            setShowAIAssistant(true);
-            break;
-          case 'c':
-            // テキスト入力中は通常のコピーを許可
-            if (!isTextInput) {
-              e.preventDefault();
-              copyLayer();
-            }
-            break;
-          case 'x':
-            // テキスト入力中は通常のカットを許可
-            if (!isTextInput) {
-              e.preventDefault();
-              cutLayer();
-            }
-            break;
-          case 'v':
-            // テキスト入力中は通常のペーストを許可
-            if (!isTextInput) {
-              e.preventDefault();
-              pasteLayer();
-            }
-            break;
-          case 'z':
-            // テキスト入力中は通常のUndoを許可
-            if (!isTextInput) {
-              e.preventDefault();
-              if (e.shiftKey) {
-                redo();
-              } else {
-                undo();
-              }
-            }
-            break;
-          case 'y':
-            // テキスト入力中は通常のRedoを許可
-            if (!isTextInput) {
-              e.preventDefault();
-              redo();
-            }
-            break;
-        }
-      } else {
-        switch (e.key) {
-          case 'F5':
-            e.preventDefault();
-            startSlideShow(appState.currentSlideIndex);
-            break;
-          case 'Delete':
-            // テキスト入力中は通常のDeleteを許可
-            if (!isTextInput && selectedLayer) {
-              e.preventDefault();
-              deleteLayer(selectedLayer.id);
-            }
-            break;
-          case 'ArrowLeft':
-            // テキスト入力中は通常のカーソル移動を許可
-            if (!isTextInput) {
-              e.preventDefault();
-              if (selectedLayer) {
-                // レイヤー選択時は微調整移動
-                updateLayer(selectedLayer.id, { x: Math.max(0, selectedLayer.x - 1) });
-              } else {
-                // スライド切り替え
-                const prevIndex = Math.max(0, appState.currentSlideIndex - 1);
-                setAppState(prev => ({ ...prev, currentSlideIndex: prevIndex }));
-              }
-            }
-            break;
-          case 'ArrowRight':
-            // テキスト入力中は通常のカーソル移動を許可
-            if (!isTextInput) {
-              e.preventDefault();
-              if (selectedLayer) {
-                // レイヤー選択時は微調整移動
-                updateLayer(selectedLayer.id, { x: Math.min(100, selectedLayer.x + 1) });
-              } else {
-                // スライド切り替え
-                const nextIndex = Math.min(appState.currentPresentation?.slides.length - 1 || 0, appState.currentSlideIndex + 1);
-                setAppState(prev => ({ ...prev, currentSlideIndex: nextIndex }));
-              }
-            }
-            break;
-          case 'ArrowUp':
-            // テキスト入力中は通常のカーソル移動を許可
-            if (!isTextInput && selectedLayer) {
-              e.preventDefault();
-              updateLayer(selectedLayer.id, { y: Math.max(0, selectedLayer.y - 1) });
-            }
-            break;
-          case 'ArrowDown':
-            // テキスト入力中は通常のカーソル移動を許可
-            if (!isTextInput && selectedLayer) {
-              e.preventDefault();
-              updateLayer(selectedLayer.id, { y: Math.min(100, selectedLayer.y + 1) });
-            }
-            break;
-          case 'Escape':
-            e.preventDefault();
-            if (showAIAssistant) {
-              setShowAIAssistant(false);
-            } else if (selectedLayer) {
-              setAppState(prev => ({
-                ...prev,
-                canvasState: {
-                  ...prev.canvasState,
-                  viewState: {
-                    ...prev.canvasState.viewState,
-                    selectedLayerId: null
-                  }
-                }
-              }));
-            }
-            break;
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [savePresentation, addSlide, startSlideShow, appState.currentSlideIndex, copyLayer, cutLayer, pasteLayer, undo, redo, selectedLayer, deleteLayer, updateLayer, showAIAssistant, setShowAIAssistant, setAppState, appState.currentPresentation]);
-
-  // =================================================================
   // Auto-save
   // =================================================================
 
   useEffect(() => {
     if (appState.currentPresentation?.settings.autoSave) {
       const interval = setInterval(() => {
-        // Only auto-save if there have been changes (silent save)
         if (appState.currentPresentation) {
           storageService.savePresentation({
             ...appState.currentPresentation,
             updatedAt: new Date(),
           }).then(() => {
-            // Silent auto-save - no toast notification
             console.log('Auto-saved presentation');
           }).catch((error) => {
             console.error('Auto-save failed:', error);
           });
         }
-      }, 120000); // Auto-save every 2 minutes instead of 30 seconds
+      }, 120000);
 
       return () => clearInterval(interval);
     }
@@ -1357,31 +1121,30 @@ const App: React.FC = () => {
   // Render
   // =================================================================
 
-  // Screen routing based on currentScreen state
   return (
     <ThemeProvider>
       {currentScreen === 'welcome' && (
         <div className="h-screen w-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white">
           <WelcomeScreen 
-          onCreateNew={createNewPresentation}
-          onLoadPresentation={loadPresentation}
-          onGenerateWithAI={generateSlides}
-          onManualGenerate={handleManualSlidesGenerated}
-          onAutoGenerate={handleAutoSlidesGenerated}
-          onImportProject={importProject}
-          onOpenSettings={() => {
-            console.log('onOpenSettings called, switching to settings screen');
-            setCurrentScreen('settings');
-          }}
-          recentPresentations={appState.recentPresentations}
-          isProcessing={isProcessing}
-          hasApiKey={isAIAvailable}
-          onApiKeySetup={() => {
-            setShowMultiProviderApiKeyManager(true);
-          }}
-        />
-        
-        
+            onCreateNew={createNewPresentation}
+            onLoadPresentation={loadPresentation}
+            onGenerateWithAI={generateSlides}
+            onManualGenerate={handleManualSlidesGenerated}
+            onAutoGenerate={handleAutoSlidesGenerated}
+            onImportProject={importProject}
+            onOpenSettings={() => {
+              setPreviousScreen('welcome');
+              setCurrentScreen('settings');
+            }}
+            recentPresentations={appState.recentPresentations}
+            isProcessing={isProcessing}
+            hasApiKey={isAIAvailable}
+            onApiKeySetup={() => {
+              setPreviousScreen('welcome');
+              setCurrentScreen('settings');
+            }}
+          />
+          
           <Toaster 
             position="bottom-center"
             toastOptions={{
@@ -1396,190 +1159,174 @@ const App: React.FC = () => {
 
       {currentScreen === 'settings' && (
         <div className="h-screen w-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white">
-          <SettingsScreen onBack={() => {
-            console.log('Settings back button clicked');
-            setCurrentScreen('welcome');
-          }} />
+          <SettingsScreen onBack={() => setCurrentScreen(previousScreen)} />
           <Toaster position="top-right" />
         </div>
       )}
 
       {currentScreen === 'editor' && (
         <div className="h-screen w-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white flex flex-col overflow-hidden">
-      <Header 
-        presentation={appState.currentPresentation}
-        onSave={savePresentation}
-        onExport={() => setShowExportManager(true)}
-        onAIAssist={() => setShowAIAssistant(true)}
-        onNewPresentation={() => setCurrentScreen('welcome')}
-        onStartSlideShow={() => startSlideShow(appState.currentSlideIndex)}
-        onPageNumberManager={() => setShowPageNumberManager(true)}
-        onVersionInfo={() => setShowVersionInfo(true)}
-        onSettings={() => setCurrentScreen('settings')}
-        isProcessing={isProcessing}
-        hasApiKey={isAIAvailable}
-      />
-
-      <main className="flex-1 flex overflow-hidden">
-        {/* Hide SlideNavigator when SlideShow is active */}
-        {!showSlideShow && (
-          <SlideNavigator 
-            slides={appState.currentPresentation?.slides || []}
-            currentIndex={appState.currentSlideIndex}
-            onSlideSelect={(index) => setAppState(prev => ({ ...prev, currentSlideIndex: index }))}
-            onSlideAdd={addSlide}
-            onSlideDelete={deleteSlide}
-            onSlideReorder={reorderSlides}
-            onSlideDuplicate={duplicateSlide}
-          />
-        )}
-
-        <div 
-          className="flex-1 flex flex-col"
-          onClick={(e) => {
-            // Clear layer selection when clicking in empty area
-            if (e.target === e.currentTarget) {
-              selectLayer(null);
-            }
-          }}
-        >
-          <div 
-            className="flex-1 flex items-center justify-center p-4"
-            onClick={(e) => {
-              // Clear layer selection when clicking in canvas area
-              if (e.target === e.currentTarget) {
-                selectLayer(null);
-              }
+          <Header 
+            presentation={appState.currentPresentation}
+            onSave={savePresentation}
+            onExport={() => setShowExportManager(true)}
+            onAIAssist={() => setShowAIAssistant(true)}
+            onNewPresentation={() => setCurrentScreen('welcome')}
+            onStartSlideShow={() => startSlideShow(appState.currentSlideIndex)}
+            onPageNumberManager={() => setShowPageNumberManager(true)}
+            onVersionInfo={() => setShowVersionInfo(true)}
+            onSettings={() => {
+              setPreviousScreen('editor');
+              setCurrentScreen('settings');
             }}
-          >
-            {currentSlide && (
-              <SlideCanvas 
-                slide={currentSlide}
-                viewState={appState.canvasState.viewState}
-                isActive={true}
-                onLayerUpdate={updateLayer}
-                onLayerSelect={selectLayer}
-                onLayerDelete={deleteLayer}
-                onLayerAdd={addLayer}
-                onViewStateUpdate={updateViewState}
+            isProcessing={isProcessing}
+            hasApiKey={isAIAvailable}
+          />
+
+          <main className="flex-1 flex overflow-hidden">
+            {!showSlideShow && (
+              <SlideNavigator 
+                slides={appState.currentPresentation?.slides || []}
+                currentIndex={appState.currentSlideIndex}
+                onSlideSelect={(index) => setAppState(prev => ({ ...prev, currentSlideIndex: index }))}
+                onSlideAdd={addSlide}
+                onSlideDelete={deleteSlide}
+                onSlideReorder={reorderSlides}
+                onSlideDuplicate={duplicateSlide}
               />
             )}
-          </div>
-        </div>
 
-        <LayerEditor 
-          layer={selectedLayer || null}
-          slide={currentSlide || null}
-          onUpdate={(updates) => {
-            if (selectedLayer) {
-              updateLayer(selectedLayer.id, updates);
-            }
-          }}
-          onDelete={() => {
-            if (selectedLayer) {
-              deleteLayer(selectedLayer.id);
-            }
-          }}
-          onDuplicate={() => {
-            if (selectedLayer) {
-              const duplicatedLayer = {
-                ...selectedLayer,
-                id: `layer-${Date.now()}`,
-                x: selectedLayer.x + 5,
-                y: selectedLayer.y + 5,
-              };
-              addLayer(duplicatedLayer);
-            }
-          }}
-          onSelectLayer={selectLayer}
-          onUpdateSlide={(updates) => {
-            if (currentSlide) {
-              updateSlide(appState.currentSlideIndex, updates);
-            }
-          }}
-          onCopy={copyLayer}
-          onCut={cutLayer}
-          onPaste={pasteLayer}
-          onUndo={undo}
-          onRedo={redo}
-          canUndo={canUndo}
-          canRedo={canRedo}
-          hasClipboard={clipboardLayer !== null}
-        />
-      </main>
+            <div 
+              className="flex-1 flex flex-col"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  selectLayer(null);
+                }
+              }}
+            >
+              <div 
+                className="flex-1 flex items-center justify-center p-4"
+                onClick={(e) => {
+                  if (e.target === e.currentTarget) {
+                    selectLayer(null);
+                  }
+                }}
+              >
+                {currentSlide && (
+                  <SlideCanvas 
+                    slide={currentSlide}
+                    viewState={appState.canvasState.viewState}
+                    isActive={true}
+                    onLayerUpdate={updateLayer}
+                    onLayerSelect={selectLayer}
+                    onLayerDelete={deleteLayer}
+                    onLayerAdd={addLayer}
+                    onViewStateUpdate={updateViewState}
+                  />
+                )}
+              </div>
+            </div>
 
-      {showAIAssistant && (
-        <AIAssistant 
-          onSlideGenerate={generateSlides}
-          onElementGenerate={generateElement}
-          onContentAssist={assistWithContent}
-          onRetryFailedImages={retryFailedImages}
-          isProcessing={isProcessing}
-          error={appState.error}
-          onClose={() => setShowAIAssistant(false)}
-          hasApiKey={isAIAvailable}
-          onApiKeySetup={() => {
-            setShowAIAssistant(false);
-            setShowMultiProviderApiKeyManager(true);
-          }}
-          currentPresentation={appState.currentPresentation}
-        />
-      )}
+            <LayerEditor 
+              layer={selectedLayer || null}
+              slide={currentSlide || null}
+              onUpdate={(updates) => {
+                if (selectedLayer) {
+                  updateLayer(selectedLayer.id, updates);
+                }
+              }}
+              onDelete={() => {
+                if (selectedLayer) {
+                  deleteLayer(selectedLayer.id);
+                }
+              }}
+              onDuplicate={() => {
+                if (selectedLayer) {
+                  const duplicatedLayer = {
+                    ...selectedLayer,
+                    id: `layer-${Date.now()}`,
+                    x: selectedLayer.x + 5,
+                    y: selectedLayer.y + 5,
+                  };
+                  addLayer(duplicatedLayer);
+                }
+              }}
+              onSelectLayer={selectLayer}
+              onUpdateSlide={(updates) => {
+                if (currentSlide) {
+                  updateSlide(appState.currentSlideIndex, updates);
+                }
+              }}
+              onCopy={copyLayer}
+              onCut={cutLayer}
+              onPaste={pasteLayer}
+              onUndo={undo}
+              onRedo={redo}
+              canUndo={canUndo}
+              canRedo={canRedo}
+              hasClipboard={clipboardLayer !== null}
+            />
+          </main>
 
-      {showExportManager && (
-        <ExportManager 
-          presentation={appState.currentPresentation}
-          onExport={exportPresentation}
-          isProcessing={isProcessing}
-          onClose={() => setShowExportManager(false)}
-        />
-      )}
+          {showAIAssistant && (
+            <AIAssistant 
+              onSlideGenerate={generateSlides}
+              onElementGenerate={generateElement}
+              onContentAssist={assistWithContent}
+              onRetryFailedImages={retryFailedImages}
+              isProcessing={isProcessing}
+              error={appState.error}
+              onClose={() => setShowAIAssistant(false)}
+              hasApiKey={isAIAvailable}
+              onApiKeySetup={() => {
+                setPreviousScreen('editor');
+                setCurrentScreen('settings');
+              }}
+              currentPresentation={appState.currentPresentation}
+            />
+          )}
 
-      {showSlideShow && appState.currentPresentation && (
-        <SlideShow 
-          presentation={appState.currentPresentation}
-          startSlideIndex={slideShowStartIndex}
-          onClose={closeSlideShow}
-        />
-      )}
+          {showExportManager && (
+            <ExportManager 
+              presentation={appState.currentPresentation}
+              onExport={exportPresentation}
+              isProcessing={isProcessing}
+              onClose={() => setShowExportManager(false)}
+            />
+          )}
 
-      {showPageNumberManager && appState.currentPresentation && (
-        <PageNumberManager 
-          presentation={appState.currentPresentation}
-          onUpdate={updatePageNumberSettings}
-          onClose={() => setShowPageNumberManager(false)}
-        />
-      )}
+          {showSlideShow && appState.currentPresentation && (
+            <SlideShow 
+              presentation={appState.currentPresentation}
+              startSlideIndex={slideShowStartIndex}
+              onClose={closeSlideShow}
+            />
+          )}
 
-      {showVersionInfo && (
-        <VersionInfo 
-          presentation={appState.currentPresentation}
-          onClose={() => setShowVersionInfo(false)}
-        />
-      )}
+          {showPageNumberManager && appState.currentPresentation && (
+            <PageNumberManager 
+              presentation={appState.currentPresentation}
+              onUpdate={updatePageNumberSettings}
+              onClose={() => setShowPageNumberManager(false)}
+            />
+          )}
 
-      {showMultiProviderApiKeyManager && (
-        <MultiProviderApiKeyManager 
-          isOpen={showMultiProviderApiKeyManager}
-          onClose={() => {
-            setShowMultiProviderApiKeyManager(false);
-            // 設定画面を閉じる時にAPIキー設定を再読み込み
-            loadApiKeySettings();
-          }}
-          onApiKeyUpdate={handleMultiProviderApiKeyUpdate}
-          currentSettings={apiKeySettings}
-        />
-      )}
+          {showVersionInfo && (
+            <VersionInfo 
+              presentation={appState.currentPresentation}
+              onClose={() => setShowVersionInfo(false)}
+            />
+          )}
 
-      <Toaster 
-        position="bottom-center"
-        toastOptions={{
-          style: {
-            background: '#334155',
-            color: '#fff',
-          },
-        }}
-        />
+          <Toaster 
+            position="bottom-center"
+            toastOptions={{
+              style: {
+                background: '#334155',
+                color: '#fff',
+              },
+            }}
+          />
         </div>
       )}
     </ThemeProvider>

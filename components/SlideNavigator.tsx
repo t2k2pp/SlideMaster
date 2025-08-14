@@ -113,6 +113,9 @@ const SlideNavigator: React.FC<SlideNavigatorProps> = ({
     const aspectRatio = canvasSize.width / canvasSize.height;
     const previewWidth = 200;
     const previewHeight = previewWidth / aspectRatio;
+    
+    // 実際のキャンバスサイズに対するスケール比を計算
+    const scaleRatio = previewWidth / canvasSize.width;
 
     return (
       <div
@@ -135,79 +138,93 @@ const SlideNavigator: React.FC<SlideNavigatorProps> = ({
         onDragEnd={handleDragEnd}
       >
         {/* Slide Content Preview */}
-        <div className="absolute inset-0 p-2">
-          {slide.layers && Array.isArray(slide.layers) ? slide.layers
-            .sort((a: any, b: any) => (a.zIndex || 0) - (b.zIndex || 0))
-            .map((layer: any) => (
-              <div
-                key={layer.id}
-                className="absolute pointer-events-none"
-                style={{
-                  left: `${layer.x || 0}%`,
-                  top: `${layer.y || 0}%`,
-                  width: `${layer.width || 100}%`,
-                  height: `${layer.height || 100}%`,
-                  transform: `rotate(${layer.rotation || 0}deg)`,
-                  opacity: layer.opacity !== undefined ? layer.opacity : 1,
-                  zIndex: layer.zIndex || 0,
-                }}
-              >
-                {layer.type === 'text' && layer.content && (
-                  <div
-                    className="overflow-hidden"
-                    style={{
-                      fontSize: `${Math.max(8, (layer.fontSize || 24) * 0.15)}px`,
-                      textAlign: layer.textAlign || 'left',
-                      color: layer.textColor || '#ffffff',
-                      lineHeight: '1.3',
-                      wordBreak: 'break-word',
-                    }}
-                  >
-                    {String(layer.content).split('\n').slice(0, 3).join('\n')}
-                    {String(layer.content).split('\n').length > 3 && '...'}
-                  </div>
-                )}
-                {layer.type === 'image' && (
-                  <div className="w-full h-full flex items-center justify-center">
-                    {layer.src ? (
-                      <img
-                        src={layer.src}
-                        alt=""
-                        className={`w-full h-full ${
-                          layer.objectFit === 'contain' ? 'object-contain' :
-                          layer.objectFit === 'cover' ? 'object-cover' :
-                          layer.objectFit === 'fill' ? 'object-fill' :
-                          layer.objectFit === 'circle' ? 'object-cover' :
-                          layer.objectFit === 'circle-fit' ? 'object-contain' : 'object-contain'
-                        }`}
-                        style={{
-                          borderRadius: layer.objectFit === 'circle' || layer.objectFit === 'circle-fit' ? '50%' : undefined
-                        }}
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <div className="w-3 h-3 bg-slate-500 dark:bg-slate-400 rounded"></div>
-                    )}
-                  </div>
-                )}
-                {layer.type === 'shape' && (
-                  <div
-                    className="w-full h-full"
-                    style={{
-                      backgroundColor: layer.fillColor || '#cccccc',
-                      borderRadius: layer.shapeType === 'circle' ? '50%' : '0',
-                    }}
-                  ></div>
-                )}
-              </div>
-            )) : (
-              // レイヤーが存在しない場合の表示
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="text-xs text-slate-500 dark:text-slate-400">No content</div>
-              </div>
-            )}
+        <div className="absolute inset-0" style={{ transform: `scale(${scaleRatio})`, transformOrigin: '0 0' }}>
+          <div style={{ width: canvasSize.width, height: canvasSize.height, position: 'relative' }}>
+            {slide.layers && Array.isArray(slide.layers) ? slide.layers
+              .sort((a: any, b: any) => (a.zIndex || 0) - (b.zIndex || 0))
+              .map((layer: any) => (
+                <div
+                  key={layer.id}
+                  className="absolute pointer-events-none"
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    width: `${(layer.width / 100) * canvasSize.width}px`,
+                    height: `${(layer.height / 100) * canvasSize.height}px`,
+                    transform: `translate(${(layer.x / 100) * canvasSize.width}px, ${(layer.y / 100) * canvasSize.height}px) rotate(${layer.rotation || 0}deg)`,
+                    opacity: layer.opacity !== undefined ? layer.opacity : 1,
+                    zIndex: layer.zIndex || 0,
+                  }}
+                >
+                  {layer.type === 'text' && layer.content && (
+                    <div
+                      className="overflow-hidden whitespace-pre-wrap"
+                      style={{
+                        fontSize: `${layer.fontSize || 24}px`,
+                        textAlign: layer.textAlign || 'left',
+                        color: layer.textColor || '#000000',
+                        lineHeight: layer.lineHeight || 1.2,
+                        letterSpacing: layer.letterSpacing || 'normal',
+                        fontWeight: layer.fontWeight || 'normal',
+                        fontStyle: layer.fontStyle || 'normal',
+                        textDecoration: layer.textDecoration || 'none',
+                        wordBreak: 'break-word',
+                        fontFamily: layer.fontFamily || 'inherit',
+                        padding: '8px',
+                        boxSizing: 'border-box',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'flex-start',
+                        width: '100%',
+                        height: '100%',
+                      }}
+                    >
+                      {String(layer.content)}
+                    </div>
+                  )}
+                  {layer.type === 'image' && (
+                    <div className="w-full h-full flex items-center justify-center">
+                      {layer.src ? (
+                        <img
+                          src={layer.src}
+                          alt=""
+                          className={`w-full h-full ${
+                            layer.objectFit === 'contain' ? 'object-contain' :
+                            layer.objectFit === 'cover' ? 'object-cover' :
+                            layer.objectFit === 'fill' ? 'object-fill' :
+                            layer.objectFit === 'circle' ? 'object-cover' :
+                            layer.objectFit === 'circle-fit' ? 'object-contain' : 'object-contain'
+                          }`}
+                          style={{
+                            borderRadius: layer.objectFit === 'circle' || layer.objectFit === 'circle-fit' ? '50%' : undefined
+                          }}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-3 h-3 bg-slate-500 dark:bg-slate-400 rounded"></div>
+                      )}
+                    </div>
+                  )}
+                  {layer.type === 'shape' && (
+                    <div
+                      className="w-full h-full"
+                      style={{
+                        backgroundColor: layer.fillColor || '#cccccc',
+                        borderRadius: layer.shapeType === 'circle' ? '50%' : '0',
+                      }}
+                    ></div>
+                  )}
+                </div>
+              )) : (
+                // レイヤーが存在しない場合の表示
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="text-xs text-slate-500 dark:text-slate-400">No content</div>
+                </div>
+              )}
+          </div>
         </div>
 
         {/* Slide Number */}

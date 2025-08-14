@@ -18,7 +18,7 @@ import { ProjectCreator } from './welcome/ProjectCreator';
 import { AIGenerationForm } from './welcome/AIGenerationForm';
 import { VideoGenerationForm } from './welcome/VideoGenerationForm';
 import { ManualGenerationForm } from './welcome/ManualGenerationForm';
-import { RecentPresentations } from './welcome/RecentPresentations';
+import { ProjectManager } from './welcome/ProjectManager';
 import { ProjectImporter } from './welcome/ProjectImporter';
 
 // =================================================================
@@ -164,7 +164,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
               }`}
             >
               <Clock className="w-5 h-5 inline-block mr-2" />
-              Recent
+              Projects
             </button>
             <button
               onClick={() => setActiveTab('import')}
@@ -217,9 +217,9 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           )}
 
           {activeTab === 'recent' && (
-            <RecentPresentations
-              recentPresentations={recentPresentations}
+            <ProjectManager
               onLoadPresentation={onLoadPresentation}
+              onImportProject={onImportProject}
               isProcessing={isProcessing}
             />
           )}

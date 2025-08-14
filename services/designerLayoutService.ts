@@ -50,22 +50,22 @@ export const DESIGNER_STRATEGIES: Record<DesignerType, DesignerStrategy> = {
     philosophy: 'Simple and Predictable',
     layoutPrinciples: ['Basic 4-pattern rotation', 'Simple title-content structure', 'Predictable layout cycle', 'No creative experimentation'],
     purposeAdaptation: {
-      'auto': { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
-      'business_presentation': { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
-      'academic_lecture': { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'content', colorScheme: 'professional' },
-      'storytelling_narrative': { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
-      'children_education': { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
-      'technical_documentation': { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'content', colorScheme: 'professional' },
-      'creative_showcase': { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
-      'medical_healthcare': { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'content', colorScheme: 'professional' },
-      'sales_pitch': { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
-      'training_workshop': { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'content', colorScheme: 'professional' },
-      'conference_talk': { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
-      'product_demo': { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
-      'financial_report': { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'content', colorScheme: 'professional' },
-      'research_findings': { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'content', colorScheme: 'professional' },
-      'marketing_campaign': { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
-      'game_book': { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
+      'auto':                    { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
+      'business_presentation':   { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
+      'academic_lecture':        { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'content',  colorScheme: 'professional' },
+      'storytelling_narrative':  { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
+      'children_education':      { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
+      'technical_documentation': { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'content',  colorScheme: 'professional' },
+      'creative_showcase':       { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
+      'medical_healthcare':      { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'content',  colorScheme: 'professional' },
+      'sales_pitch':             { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
+      'training_workshop':       { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'content',  colorScheme: 'professional' },
+      'conference_talk':         { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
+      'product_demo':            { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
+      'financial_report':        { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'content',  colorScheme: 'professional' },
+      'research_findings':       { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'content',  colorScheme: 'professional' },
+      'marketing_campaign':      { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
+      'game_book':               { preferredLayouts: ['title-only', 'title-left-image-right-text', 'title-right-image-left-text', 'title-text'], spacing: 'normal', emphasis: 'balanced', colorScheme: 'professional' },
     }
   },
   
@@ -271,10 +271,7 @@ export const getDesignerLayoutPrompt = (designer: DesignerType, purpose: Present
   
   if (!strategy) {
     console.error('No strategy found for designer:', actualDesigner);
-    // Fallback to Corporate Strategist
-    const fallbackStrategy = DESIGNER_STRATEGIES['The Corporate Strategist'];
-    const fallbackAdaptation = fallbackStrategy.purposeAdaptation[purpose] || fallbackStrategy.purposeAdaptation['business_presentation'];
-    return `フォールバック戦略: ${fallbackStrategy.name} - "${fallbackStrategy.philosophy}"`;
+    throw new Error(`指定されたデザイナー「${actualDesigner}」の戦略が見つかりません。有効なデザイナーを選択してください。`);
   }
   
   // Map new purpose to legacy purpose used in DESIGNER_STRATEGIES
@@ -283,15 +280,7 @@ export const getDesignerLayoutPrompt = (designer: DesignerType, purpose: Present
   
   if (!adaptation) {
     console.error('No adaptation found for legacy purpose:', legacyPurpose, 'from purpose:', purpose, 'Available purposes:', Object.keys(strategy.purposeAdaptation));
-    // Fallback to default purpose
-    const fallbackAdaptation = strategy.purposeAdaptation['business_presentation'] || strategy.purposeAdaptation['auto'];
-    if (fallbackAdaptation) {
-      return `フォールバック用途適用: ${strategy.name} - "${strategy.philosophy}"
-基本原則: ${strategy.layoutPrinciples.join(', ')}
-フォールバック配置: ${fallbackAdaptation.preferredLayouts.join(', ')}`;
-    } else {
-      return `基本戦略: ${strategy.name} - "${strategy.philosophy}"`;
-    }
+    throw new Error(`デザイナー「${strategy.name}」は用途「${purpose}」に対応していません。別の用途を選択してください。`);
   }
   
   const prompt = `
